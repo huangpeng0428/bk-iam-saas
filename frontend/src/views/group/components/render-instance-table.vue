@@ -51,15 +51,17 @@
             <template v-else>
               {{ $t(`m.common['无需关联实例']`) }}
             </template>
-            <Icon
+            <!-- 注释hover出现删除、详情按钮 -->
+            <!-- <Icon
               type="detail-new"
               class="view-icon"
               :title="$t(`m.common['详情']`)"
               v-if="isShowView(row)"
               @click.stop="handleViewResource(row)" />
+
             <template v-if="!isUserGroupDetail ? false : true && row.showDelete && !externalDelete">
               <Icon class="remove-icon" type="close-small" @click.stop="handleShowDelDialog(row)" />
-            </template>
+            </template> -->
           </template>
           <template v-else>
             <div class="relation-content-wrapper" v-if="!!row.isAggregate">
@@ -137,6 +139,34 @@
           </template>
         </template>
       </bk-table-column>
+      <template v-if="isCustomActionButton">
+        <bk-table-column
+          :resizable="true"
+          :label="$t(`m.common['操作-table']`)"
+          :width="curLanguageIsCn ? 200 : 400"
+        >
+          <template slot-scope="{ row }">
+            <bk-button
+              type="primary"
+              text
+              :disabled="row.isEmpty"
+              :title="row.isEmpty ? $t(`m.userGroupDetail['暂无关联实例']`) : ''"
+              @click.stop="handleViewResource(row)"
+            >
+              {{ $t(`m.userGroupDetail['查看实例权限']`) }}
+            </bk-button>
+            <bk-button
+              v-if="!isUserGroupDetail ? false : true && isShowDeleteAction"
+              type="primary"
+              text
+              style="margin-left: 10px;"
+              @click.stop="handleShowDelDialog(row)"
+            >
+              {{ $t(`m.userGroupDetail['删除操作权限']`) }}
+            </bk-button>
+          </template>
+        </bk-table-column>
+      </template>
       <template slot="empty">
         <ExceptionEmpty />
       </template>
@@ -163,16 +193,37 @@
           :params="params"
           :res-index="curResIndex"
           :cur-scope-action="curScopeAction"
+          :del-action-list="delActionList"
+          :policy-id-list="policyIdList"
+          :instance-paths="curInstancePaths"
           @on-limit-change="handleLimitChange"
-          @on-init="handleOnInit" />
+          @on-init="handleOnInit"
+          @on-delete-instance="handleDelInstance"
+        />
       </div>
-      <div slot="footer" style="margin-left: 25px;">
-        <bk-button theme="primary" :disabled="disabled" :loading="sliderLoading" @click="handleResourceSumit"
-          data-test-id="group_btn_resourceInstanceSubmit">
+      <div slot="footer" style="margin-left: 25px">
+        <bk-button
+          theme="primary"
+          :disabled="disabled"
+          :loading="sliderLoading"
+          @click="handleResourceSubmit"
+          data-test-id="group_btn_resourceInstanceSubmit"
+        >
           {{ $t(`m.common['保存']`) }}
         </bk-button>
-        <bk-button style="margin-left: 10px;" :disabled="disabled" v-if="isShowPreview" @click="handleResourcePreview">{{ $t(`m.common['预览']`) }}</bk-button>
-        <bk-button style="margin-left: 10px;" :disabled="disabled" @click="handleResourceCancel">{{ $t(`m.common['取消']`) }}</bk-button>
+        <bk-button
+          style="margin-left: 10px"
+          :disabled="disabled"
+          v-if="isShowPreview"
+          @click="handleResourcePreview"
+        >{{ $t(`m.common['预览']`) }}</bk-button
+        >
+        <bk-button
+          style="margin-left: 10px"
+          :disabled="disabled"
+          @click="handleResourceCancel"
+        >{{ $t(`m.common['取消']`) }}</bk-button
+        >
       </div>
     </bk-sideslider>
 
@@ -183,6 +234,7 @@
       @on-after-leave="handlePreviewDialogClose" />
 
     <render-aggregate-sideslider
+      ref="aggregateRef"
       :show.sync="isShowAggregateSideslider"
       :params="aggregateResourceParams"
       :is-super-manager="isSuperManager"
@@ -195,6 +247,7 @@
       :title="sidesliderTitle"
       :width="sliderWidth"
       :quick-close="true"
+      :before-close="handleBeforeClose"
       @animation-end="handleAnimationEnd">
       <div slot="content">
         <component :is="'RenderDetail'" :data="previewData" />
@@ -209,18 +262,17 @@
       @confirm="handleDelete">
       <h3 style="text-align:center">{{ $t(`m.common['是否删除该自定义权限']`) }}</h3>
     </bk-dialog> -->
-    
+
     <delete-action-dialog
       :show.sync="isShowDeleteDialog"
-      :title="$t(`m.dialog['确认删除内容？']`, { value: $t(`m.dialog['删除操作权限']`) } )"
-      :tip="$t(`m.info['删除依赖操作产生的影响']`, { value: currentActionName })"
+      :title="delActionDialogTitle"
+      :tip="delActionDialogTip"
       :name="currentActionName"
       :related-action-list="delActionList"
       @on-after-leave="handleAfterDeleteLeave"
       @on-cancel="handleCancelDelete"
       @on-submit="handleDelete"
     />
-
   </div>
 </template>
 
@@ -239,6 +291,7 @@
   import RenderResourcePopover from '@/components/iam-view-resource-popover';
   import RenderDetail from '../common/render-detail';
   import DeleteActionDialog from '@/views/group/components/delete-related-action-dialog.vue';
+  import GroupAggregationPolicy from '../../../model/group-aggregation-policy';
 
   // import store from '@/store'
   export default {
@@ -320,6 +373,11 @@
       linearActionList: {
         type: Array,
         default: () => []
+      },
+      // 单独处理需要自定义操作按钮的页面
+      isCustomActionButton: {
+        type: Boolean,
+        default: false
       }
     },
     data () {
@@ -356,6 +414,7 @@
         sliderLoading: false,
         isShowDeleteDialog: false,
         showIcon: false,
+        curCopyNoLimited: false,
         footerPosition: 'center',
         newRow: '',
         role: '',
@@ -364,7 +423,13 @@
         curCopyDataId: '',
         emptyResourceGroupsList: [],
         delActionList: [],
-        currentActionName: ''
+        delPathList: [],
+        policyIdList: [],
+        customData: [],
+        curInstancePaths: [],
+        currentActionName: '',
+        delActionDialogTitle: '',
+        delActionDialogTip: ''
       };
     },
     computed: {
@@ -461,6 +526,9 @@
           }
           const curSelectionCondition = this.tableList[this.curIndex].conditionIds;
           return curSelectionCondition;
+      },
+      isShowDeleteAction () {
+        return ['detail'].includes(this.mode) && this.isCustom && this.type !== 'view' && !this.externalDelete;
       }
     },
     watch: {
@@ -565,29 +633,74 @@
           };
         }
       },
+      // handlerSelectAggregateRes (payload) {
+      //   // debugger
+      //   window.changeDialog = true;
+      //   const instances = payload.map(item => {
+      //     return {
+      //       id: item.id,
+      //       name: item.display_name
+      //     };
+      //   });
+      //   this.tableList[this.aggregateIndex].isError = false;
+      //   this.selectedIndex = this.tableList[this.aggregateIndex].selectedIndex;
+      //   const instanceKey = this.tableList[this.aggregateIndex].aggregateResourceType[this.selectedIndex].id;
+      //   const instancesDisplayData = _.cloneDeep(this.tableList[this.aggregateIndex].instancesDisplayData);
+      //   this.tableList[this.aggregateIndex].instancesDisplayData = {
+      //               ...instancesDisplayData,
+      //               [instanceKey]: instances
+      //   };
+      //   this.tableList[this.aggregateIndex].instances = [];
+
+      //   for (const key in this.tableList[this.aggregateIndex].instancesDisplayData) {
+      //     // eslint-disable-next-line max-len
+      //     this.tableList[this.aggregateIndex].instances.push(...this.tableList[this.aggregateIndex].instancesDisplayData[key]);
+      //   }
+      //   this.$emit('on-select', this.tableList[this.aggregateIndex]);
+      // },
       handlerSelectAggregateRes (payload) {
-        // debugger
-        window.changeDialog = true;
         const instances = payload.map(item => {
           return {
             id: item.id,
             name: item.display_name
           };
         });
-        this.tableList[this.aggregateIndex].isError = false;
-        this.selectedIndex = this.tableList[this.aggregateIndex].selectedIndex;
-        const instanceKey = this.tableList[this.aggregateIndex].aggregateResourceType[this.selectedIndex].id;
-        const instancesDisplayData = _.cloneDeep(this.tableList[this.aggregateIndex].instancesDisplayData);
-        this.tableList[this.aggregateIndex].instancesDisplayData = {
-                    ...instancesDisplayData,
-                    [instanceKey]: instances
+        const curAggregateItem = this.tableList[this.aggregateIndex];
+        curAggregateItem.isError = false;
+        this.selectedIndex = curAggregateItem.selectedIndex;
+        const instanceKey = curAggregateItem.aggregateResourceType[this.selectedIndex].id;
+        const instancesDisplayData = curAggregateItem.instancesDisplayData;
+        curAggregateItem.instancesDisplayData = {
+          ...instancesDisplayData,
+          [instanceKey]: instances
         };
-        this.tableList[this.aggregateIndex].instances = [];
-
-        for (const key in this.tableList[this.aggregateIndex].instancesDisplayData) {
-          // eslint-disable-next-line max-len
-          this.tableList[this.aggregateIndex].instances.push(...this.tableList[this.aggregateIndex].instancesDisplayData[key]);
+        curAggregateItem.instances = [];
+        for (const key in curAggregateItem.instancesDisplayData) {
+          curAggregateItem.instances.push(...curAggregateItem.instancesDisplayData[key]);
         }
+        const conditionData = this.$refs.aggregateRef.handleGetValue();
+        const { isEmpty, data } = conditionData;
+        if (isEmpty) {
+          return;
+        }
+        const isConditionEmpty = data.length === 1 && data[0] === 'none';
+        if (isConditionEmpty) {
+          curAggregateItem.instances = ['none'];
+          curAggregateItem.isLimitExceeded = false;
+          curAggregateItem.isError = true;
+          curAggregateItem.isNoLimited = false;
+        } else {
+          // data和isEmpty都为false代表是无限制
+          const isNoLimited = !isEmpty && !data.length;
+          curAggregateItem.instances = data;
+          curAggregateItem.isError = !(isNoLimited || data.length);
+          curAggregateItem.isNoLimited = isNoLimited;
+        }
+        this.$set(
+          this.tableList,
+          this.aggregateIndex,
+          new GroupAggregationPolicy({ ...curAggregateItem, ...{ isNeedNoLimited: true } })
+        );
         this.$emit('on-select', this.tableList[this.aggregateIndex]);
       },
       handleRowMouseEnter (index, event, row) {
@@ -600,51 +713,130 @@
           this.$set(row, 'showDelete', false);
         }
       },
-      handleShowDelDialog (row) {
-        const { id, mode, name } = row;
+      // 处理操作和资源实例删除
+      handleDelActionOrInstance (payload, type) {
+        const { id, mode, name } = payload;
         let delRelatedActions = [];
         this.delActionList = [];
         this.currentActionName = name;
         const isCustom = ['custom'].includes(mode);
-        const policyIdList = this.tableList.map(item => item.id);
-        const linearActionList = this.linearActionList.filter(item => policyIdList.includes(item.id));
-        const curAction = linearActionList.find(item => item.id === id);
-        const hasRelatedActions = curAction && curAction.related_actions && curAction.related_actions.length;
-        linearActionList.forEach(item => {
+        const policyIdList = this.tableList.map((item) => item.id);
+        const linearActionList = this.linearActionList.filter((item) =>
+          policyIdList.includes(item.id)
+        );
+        const curAction = linearActionList.find((item) => item.id === id);
+        const hasRelatedActions
+          = curAction && curAction.related_actions && curAction.related_actions.length;
+        linearActionList.forEach((item) => {
           // 如果这里过滤自己还能在其他数据找到相同的related_actions，就代表有其他数据也关联了相同的操作
-          if (isCustom && hasRelatedActions && item.related_actions && item.related_actions.length
-            && item.id !== id) {
-            delRelatedActions = item.related_actions.filter(v => curAction.related_actions.includes(v));
+          if (
+            isCustom
+            && hasRelatedActions
+            && item.related_actions
+            && item.related_actions.length
+            && item.id !== id
+          ) {
+            delRelatedActions = item.related_actions.filter((v) =>
+              curAction.related_actions.includes(v)
+            );
           }
           if (isCustom && item.related_actions && item.related_actions.includes(id)) {
             this.delActionList.push(item);
           }
         });
-        let ids = [row.policy_id];
+        let ids = [payload.policy_id];
         if (this.delActionList.length) {
-          const list = this.tableList.filter(item => this.delActionList.map(action => action.id).includes(item.id));
-          ids = [row.policy_id].concat(list.map(v => v.policy_id));
-          // this.bkMessageInstance = this.$bkMessage({
-          //   limit: 1,
-          //   theme: 'error',
-          //   message: `${this.$t(`m.perm['不能删除当前操作']`)}, ${this.$t(`m.common['【']`)}${this.delActionList.join()}${this.$t(`m.common['】']`)}${this.$t(`m.perm['等']`)}${this.delActionList.length}${this.$t(`m.perm['个操作关联了']`)}${name}`,
-          //   ellipsisLine: 10,
-          //   ellipsisCopy: true
-          // });
-          // return;
+          const list = this.tableList.filter((item) =>
+            this.delActionList.map((action) => action.id).includes(item.id)
+          );
+          ids = [payload.policy_id].concat(list.map((v) => v.policy_id));
+        // this.bkMessageInstance = this.$bkMessage({
+        //   limit: 1,
+        //   theme: 'error',
+        //   message: `${this.$t(`m.perm['不能删除当前操作']`)}, ${this.$t(`m.common['【']`)}${this.delActionList.join()}${this.$t(`m.common['】']`)}${this.$t(`m.perm['等']`)}${this.delActionList.length}${this.$t(`m.perm['个操作关联了']`)}${name}`,
+        //   ellipsisLine: 10,
+        //   ellipsisCopy: true
+        // });
+        // return;
         }
-        if (isCustom && !delRelatedActions.length && hasRelatedActions) {
-          const list = [...this.tableList].filter(v => curAction.related_actions.includes(v.id));
-          if (list.length) {
-            // eslint-disable-next-line camelcase
-            ids = ids.concat(list.map(v => v.policy_id));
+        const typeMap = {
+          action: () => {
+            if (isCustom && !delRelatedActions.length && hasRelatedActions) {
+              const list = [...this.tableList].filter((v) =>
+                curAction.related_actions.includes(v.id)
+              );
+              if (list.length) {
+                ids = ids.concat(list.map((v) => v.policy_id));
+              }
+            }
+            this.delActionDialogTitle = this.$t(`m.dialog['确认删除内容？']`, {
+              value: this.$t(`m.dialog['删除操作权限']`)
+            });
+            this.delActionDialogTip = this.$t(`m.info['删除依赖操作产生的影响']`, {
+              value: name
+            });
+            this.newRow = Object.assign(payload, { ids });
+            this.isShowDeleteDialog = true;
+          },
+          instance: () => {
+            const scopeAction = this.authorization[this.params.system_id] || [];
+            this.curScopeAction = _.cloneDeep(scopeAction.find((item) => item.id === id));
+            this.policyIdList = _.cloneDeep(ids);
+            this.resourceInstanceSidesliderTitle = this.$t(
+              `m.info['关联侧边栏操作的资源实例']`,
+              { value: `${this.$t(`m.common['【']`)}${name}${this.$t(`m.common['】']`)}` }
+            );
+            window.changeAlert = 'iamSidesider';
+            this.isShowResourceInstanceSideslider = true;
           }
-        }
-        this.isShowDeleteDialog = true;
-        this.newRow = Object.assign(row, { ids });
+        };
+        typeMap[type]();
+      },
+      handleShowDelDialog (row) {
+        this.handleDelActionOrInstance(row, 'action');
       },
       handleDelete () {
         this.$emit('on-delete', this.newRow);
+      },
+      showResourceInstance (data, index, resItem, resIndex, groupIndex) {
+        window.changeDialog = true;
+        this.params = {
+          system_id: this.systemId,
+          action_id: data.id,
+          resource_type_system: resItem.system_id,
+          resource_type_id: resItem.type
+        };
+        if (this.isCreateMode) {
+          this.params.system_id = data.detail.system.id;
+        }
+        this.curIndex = index;
+        this.curResIndex = resIndex;
+        this.curGroupIndex = groupIndex;
+        if (this.customData.length && ['userGroupDetail'].includes(this.$route.name)) {
+          const customData = this.customData.find(
+            (item) => item.policy_id === data.policy_id
+          );
+          if (customData) {
+            const curCondition = customData.resource_groups[this.curGroupIndex]
+              .related_resource_types[this.curResIndex].conditionBackup;
+            // conditionBackup代表的是接口返回的缓存数据，处理新增未提交的资源实例删除
+            console.log(curCondition, 5655);
+            const curPaths
+              = curCondition.length
+                && curCondition.reduce((prev, next) => {
+                  prev.push(
+                    ...next.instance.map((v) => {
+                      const paths = { ...v.path, ...next.path };
+                      delete paths.instance;
+                      return paths;
+                    })
+                  );
+                  return prev;
+                }, []);
+            this.curInstancePaths = [...curPaths];
+          }
+        }
+        this.handleDelActionOrInstance(data, 'instance');
       },
       handleViewResource (payload) {
         this.curId = payload.id;
@@ -671,11 +863,14 @@
         bus.$emit('on-drawer-side', { width: 1160 });
         this.isShowSideslider = true;
       },
+      handleBeforeClose () {
+        bus.$emit('on-drawer-side', { width: 960 });
+        return true;
+      },
       handleAnimationEnd () {
         this.sidesliderTitle = '';
         this.curId = '';
         this.previewData = [];
-        bus.$emit('on-drawer-side', { width: 960 });
       },
       handleAfterDeleteLeave () {
         this.currentActionName = '';
@@ -753,6 +948,7 @@
         this.curCopyData = _.cloneDeep(payload.instancesDisplayData[this.instanceKey]);
         this.curCopyDataId = payload.aggregationId;
         this.curCopyMode = 'aggregate';
+        this.curCopyNoLimited = payload.isNoLimited;
         this.showMessage(this.$t(`m.info['实例复制']`));
         this.$refs[`condition_${index}_aggregateRef`] && this.$refs[`condition_${index}_aggregateRef`].setImmediatelyShow(true);
       },
@@ -839,7 +1035,7 @@
               groupItem.related_resource_types
                 && groupItem.related_resource_types.forEach((subItem, subItemIndex) => {
                   if (`${subItem.system_id}${subItem.type}` === this.curCopyKey) {
-                    subItem.condition = _.cloneDeep(tempCurData);
+                    subItem.condition = this.curCopyNoLimited ? [] : _.cloneDeep(tempCurData);
                     subItem.isError = false;
                     this.$emit('on-resource-select', index, subItemIndex, subItem.condition);
                   }
@@ -905,9 +1101,14 @@
       },
 
       showAggregateResourceInstance (data, index) {
+        const aggregateResourceParams = {
+          ...data.aggregateResourceType[data.selectedIndex],
+          curAggregateSystemId: data.system_id,
+          isNoLimited: data.isNoLimited || false
+        };
         this.selectedIndex = data.selectedIndex;
         window.changeDialog = true;
-        this.aggregateResourceParams = _.cloneDeep(data.aggregateResourceType[data.selectedIndex]);
+        this.aggregateResourceParams = _.cloneDeep(aggregateResourceParams);
         this.aggregateIndex = index;
         const instanceKey = data.aggregateResourceType[data.selectedIndex].id;
         this.instanceKey = instanceKey;
@@ -953,32 +1154,16 @@
       handleOnInit (payload) {
         this.disabled = !payload;
       },
-      showResourceInstance (data, index, resItem, resIndex, groupIndex) {
-        window.changeDialog = true;
-        this.params = {
-          system_id: this.systemId,
-          action_id: data.id,
-          resource_type_system: resItem.system_id,
-          resource_type_id: resItem.type
-        };
-        if (this.isCreateMode) {
-          this.params.system_id = data.detail.system.id;
-        }
-        const scopeAction = this.authorization[this.params.system_id] || [];
-        this.curScopeAction = _.cloneDeep(scopeAction.find(item => item.id === data.id));
-        this.curIndex = index;
-        this.curResIndex = resIndex;
-        this.curGroupIndex = groupIndex;
-        this.resourceInstanceSidesliderTitle = this.$t(`m.info['关联侧边栏操作的资源实例']`, { value: `${this.$t(`m.common['【']`)}${data.name}${this.$t(`m.common['】']`)}` });
-        window.changeAlert = 'iamSidesider';
-        this.isShowResourceInstanceSideslider = true;
+      handleDelInstance (payload) {
+        // const { path } = payload;
+        // this.delPathList = [...this.delPathList, ...path];
       },
       // 请求资源实例数据
       async handleMainActionSubmit (payload, relatedActions) {
         // debugger
         const curPayload = _.cloneDeep(payload);
         this.sliderLoading = true;
-        curPayload.forEach(item => {
+        curPayload.forEach((item) => {
           item.instances = item.instance || [];
           item.attributes = item.attribute || [];
           delete item.instance;
@@ -1069,7 +1254,7 @@
         });
       },
       // 保存
-      async handleResourceSumit () {
+      async handleResourceSubmit () {
         window.changeDialog = true;
         const conditionData = this.$refs.renderResourceRef.handleGetValue();
         const { isEmpty, data } = conditionData;
@@ -1088,24 +1273,48 @@
           const { isMainAction, related_actions } = this.tableList[this.curIndex];
           // 如果为主操作
           if (isMainAction) {
+            const emptyIndex = data.findIndex(item =>
+              ((item.instance && !item.instance.length)
+                && (item.attribute && !item.attribute.length))
+              || (!item.instance && !item.attribute.length));
+            if (emptyIndex > -1) {
+              this.messageError(this.$t(`m.info['第几项实例和属性不能都为空']`, { value: emptyIndex + 1 }), 2000);
+              return;
+            }
             await this.handleMainActionSubmit(data, related_actions);
           }
           resItem.condition = data;
           resItem.isError = false;
         }
-        window.changeAlert = false;
-        this.resourceInstanceSidesliderTitle = '';
-        this.isShowResourceInstanceSideslider = false;
-        this.$emit('on-resource-select', this.curIndex, this.curResIndex, resItem.condition, this.curGroupIndex);
-        this.curIndex = -1;
-        this.curResIndex = -1;
-        this.curGroupIndex = -1;
-        // 这里触发 create/index.vue 里 handleAggregateAction 事件会导致 tableList 变化，导致 list 属性变化
-        // list 属性变化之后，isShowRelatedText 属性以及其他属性均会重置
-        // if (!this.isAllExpanded) {
-        //     // 调用合并展开的方法 重组tableList的排序
-        //     this.$emit('handleAggregateAction', false)
-        // }
+        if (this.isCustom && this.delPathList.length) {
+          this.isShowDeleteDialog = true;
+          this.delActionDialogTitle = this.$t(`m.dialog['确认删除内容？']`, {
+            value: this.$t(`m.dialog['删除实例权限']`)
+          });
+          this.delActionDialogTip = this.$t(`m.info['删除组依赖实例产生的影响']`, {
+            value: this.delPathList.map(item => item.name).join()
+          });
+        } else {
+          window.changeAlert = false;
+          this.resourceInstanceSidesliderTitle = '';
+          this.isShowResourceInstanceSideslider = false;
+          this.$emit(
+            'on-resource-select',
+            this.curIndex,
+            this.curResIndex,
+            resItem.condition,
+            this.curGroupIndex
+          );
+          this.curIndex = -1;
+          this.curResIndex = -1;
+          this.curGroupIndex = -1;
+        }
+      // 这里触发 create/index.vue 里 handleAggregateAction 事件会导致 tableList 变化，导致 list 属性变化
+      // list 属性变化之后，isShowRelatedText 属性以及其他属性均会重置
+      // if (!this.isAllExpanded) {
+      //     // 调用合并展开的方法 重组tableList的排序
+      //     this.$emit('handleAggregateAction', false)
+      // }
       },
       handleResourcePreview () {
         // debugger
@@ -1347,6 +1556,10 @@
                 if (`${item.aggregateResourceType[item.selectedIndex].system_id}${item.aggregateResourceType[item.selectedIndex].id}` === this.curCopyKey) {
                   item.instances = _.cloneDeep(tempArrgegateData);
                   item.isError = false;
+                  if (!item.instances.length) {
+                    item.isNeedNoLimited = true;
+                    item.isNoLimited = true;
+                  }
                   this.$emit('on-select', item);
                 }
               }
@@ -1423,6 +1636,8 @@
                     this.setNomalInstancesDisplayData(item, this.instanceKey);
                     this.instanceKey = ''; // 重置
                     item.isError = false;
+                    this.$set(item, 'isNoLimited', false);
+                    item.isNeedNoLimited = true;
                   }
                 });
                 this.$emit('on-select', item);
@@ -1484,8 +1699,16 @@
             }
           });
         }
-        content.isError = false;
-        this.$refs[`condition_${index}_${subIndex}_ref`][0] && this.$refs[`condition_${index}_${subIndex}_ref`][0].setImmediatelyShow(false);
+        // content.isError = false;
+        // this.$refs[`condition_${index}_${subIndex}_ref`][0] && this.$refs[`condition_${index}_${subIndex}_ref`][0].setImmediatelyShow(false);
+        // this.curCopyData = ['none'];
+        // this.showMessage(this.$t(`m.info['批量粘贴成功']`));
+        if (content.hasOwnProperty('isError')) {
+          content.isError = false;
+        }
+        this.$refs[`condition_${index}_${subIndex}_ref`]
+          && this.$refs[`condition_${index}_${subIndex}_ref`][0]
+          && this.$refs[`condition_${index}_${subIndex}_ref`][0].setImmediatelyShow(false);
         this.curCopyData = ['none'];
         this.showMessage(this.$t(`m.info['批量粘贴成功']`));
       },
@@ -1501,16 +1724,20 @@
         this.previewResourceParams = {};
         this.params = {};
         this.resourceInstanceSidesliderTitle = '';
+        this.delPathList = [];
       },
       handleResourceCancel () {
         let cancelHandler = Promise.resolve();
         if (window.changeAlert) {
           cancelHandler = leaveConfirm();
         }
-        cancelHandler.then(() => {
-          this.isShowResourceInstanceSideslider = false;
-          this.resetDataAfterClose();
-        }, _ => _);
+        cancelHandler.then(
+          () => {
+            this.isShowResourceInstanceSideslider = false;
+            this.resetDataAfterClose();
+          },
+          (_) => _
+        );
       },
       getData () {
         let flag = false;
@@ -1611,8 +1838,8 @@
             };
           } else {
             systemId = item.system_id;
-            const { actions, aggregateResourceType, instances, instancesDisplayData } = item;
-            if (instances && instances.length < 1) {
+            const { actions, aggregateResourceType, instances, instancesDisplayData, isNoLimited } = item;
+            if (!isNoLimited && (instances.length < 1 || (instances.length === 1 && instances[0] === 'none'))) {
               item.isError = true;
               flag = true;
             } else {

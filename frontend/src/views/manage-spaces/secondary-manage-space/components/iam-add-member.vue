@@ -106,6 +106,8 @@
                     data-test-id="group_addGroupMemberDialog_tree_member"
                     :all-data="treeList"
                     :empty-data="emptyData"
+                    :has-selected-users="hasSelectedUsers"
+                    :has-selected-departments="hasSelectedDepartments"
                     style="height: 309px;"
                     :is-rating-manager="curIsRatingManager"
                     :key="infiniteTreeKey"
@@ -126,6 +128,8 @@
                       :all-data="searchedResult"
                       :focus-index.sync="focusItemIndex"
                       :is-disabled="isAll"
+                      :has-selected-users="hasSelectedUsers"
+                      :has-selected-departments="hasSelectedDepartments"
                       style="height: 309px;"
                       @on-checked="handleSearchResultSelected">
                     </dialog-infinite-list>
@@ -172,7 +176,7 @@
               </p>
               <bk-button
                 theme="primary"
-                :style="{ width: '100%', marginTop: '35px' }"
+                :style="{ width: '100%', marginTop: '10px' }"
                 :loading="manualAddLoading"
                 :disabled="isManualDisabled || isAll"
                 data-test-id="group_addGroupMemberDialog_btn_addManualUser"
@@ -212,7 +216,7 @@
                 <div class="organization-item" v-for="item in hasSelectedDepartments" :key="item.id">
                   <Icon type="file-close" class="folder-icon" />
                   <span class="organization-name" :title="nameType(item)">{{ item.name }}</span>
-                  <span class="user-count" v-if="item.showCount">{{ '(' + item.count + `)` }}</span>
+                  <span class="user-count" v-if="item.showCount && enableOrganizationCount">{{ '(' + item.count + `)` }}</span>
                   <Icon bk type="close-circle-shape" class="delete-depart-icon" @click="handleDelete(item, 'organization')" />
                 </div>
               </div>
@@ -268,7 +272,8 @@
   import dialogInfiniteList from '@/components/dialog-infinite-list';
   import IamDeadline from '@/components/iam-deadline/horizontal';
   import { guid, formatCodeData } from '@/common/util';
-  import { bus } from '@/common/bus';
+  import { mapGetters } from 'vuex';
+  // import { bus } from '@/common/bus';
 
   // 去除()以及之间的字符
   const getUsername = (str) => {
@@ -389,6 +394,7 @@
         isAll: false,
         isAllFlag: false,
         externalSource: '',
+        enableOrganizationCount: window.ENABLE_ORGANIZATION_COUNT.toLowerCase() === 'true',
         emptyData: {
           type: '',
           text: '',
@@ -398,6 +404,7 @@
       };
     },
     computed: {
+      ...mapGetters(['user']),
       isLoading () {
         return this.requestQueue.length > 0;
       },
@@ -473,7 +480,10 @@
         return this.isRatingManager;
       },
       isHierarchicalAdmin () {
-        return this.$store.getters.roleList.find(item => item.id === this.$store.getters.navCurRoleId) || {};
+        // const { navCurRoleId, curRoleId, roleList } = this.$store.getters;
+        // const roleId = navCurRoleId || curRoleId;
+        // return roleList.find(item => item.id === roleId) || {};
+        return this.user.role || {};
       },
       nameType () {
         return (payload) => {
@@ -646,11 +656,16 @@
           }
         } catch (e) {
           console.error(e);
-          this.bkMessageInstance = this.$bkMessage({
-            limit: 1,
-            theme: 'error',
-            message: this.$t(`m.verify['用户名输入格式错误]`)
-          });
+          const { response } = e;
+          if (response && [400].includes(response.status)) {
+            this.messageError(this.$t(`m.verify['用户名输入格式错误']`), 2000);
+          } else {
+            this.bkMessageInstance = this.$bkMessage({
+              limit: 1,
+              theme: 'error',
+              message: e.message || e.data.msg || e.statusText
+            });
+          }
         } finally {
           this.manualAddLoading = false;
         }
@@ -1282,16 +1297,21 @@
       },
             
       async handleSkip () {
-        bus.$emit('nav-change', { id: this.$store.getters.navCurRoleId }, 0);
-        await this.$store.dispatch('role/updateCurrentRole', { id: 0 });
-        const routeData = this.$router.resolve({ path: `${this.$store.getters.navCurRoleId}/rating-manager-edit`, params: { id: this.$store.getters.navCurRoleId } });
-        window.open(routeData.href, '_blank');
+        // bus.$emit('nav-change', { id: this.$store.getters.navCurRoleId }, 0);
+        // await this.$store.dispatch('role/updateCurrentRole', { id: 0 });
+        // const routeData = this.$router.resolve({ path: `${this.$store.getters.navCurRoleId}/rating-manager-edit`, params: { id: this.$store.getters.navCurRoleId } });
+        // window.open(routeData.href, '_blank');
         // this.$router.push({
         //     name: 'gradingAdminEdit',
         //     params: {
         //         id: this.$store.getters.navCurRoleId
         //     }
         // });
+        const routeData = this.$router.resolve({
+          name: 'authorBoundaryEditFirstLevel',
+          params: { id: this.$store.getters.curRoleId }
+        });
+        window.open(routeData.href, '_blank');
       }
     }
   };
@@ -1460,9 +1480,8 @@
                 .manual-wrapper {
                     padding-right: 10px;
                     .manual-error-text {
-                        position: absolute;
+                        /* position: absolute; */
                         width: 320px;
-                        line-height: 1;
                         margin-top: 4px;
                         font-size: 12px;
                         color: #ff4d4d;

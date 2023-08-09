@@ -503,6 +503,15 @@
             params.hidden = false;
           }
           const { code, data } = await this.$store.dispatch('system/getSystems', params);
+          if (data.length) {
+            data.sort((curr, next) => curr.name.localeCompare(next.name));
+            if (this.externalSystemId) {
+              const externalSystemIndex = data.findIndex(item => item.id === this.externalSystemId);
+              if (externalSystemIndex > -1) {
+                data.splice(externalSystemIndex, 1, ...data.splice(0, 1, data[externalSystemIndex]));
+              }
+            }
+          }
           this.systemList = _.cloneDeep(data);
           this.curSystemList = _.cloneDeep(data);
           this.emptyData = formatCodeData(code, this.emptyData, data.length === 0);
@@ -624,6 +633,7 @@
             }
             let allChecked = true;
             let allDisabled = true;
+            item.actions = item.actions.filter(v => !v.hidden);
             item.actions.forEach(act => {
               act.$id = `${payload}&${act.id}`;
               act.related_resource_types.forEach(v => {
@@ -642,6 +652,7 @@
               this.linearAction.push(act);
             });
             item.sub_groups.forEach(act => {
+              act.actions = act.actions.filter(v => !v.hidden);
               (act.actions || []).forEach(v => {
                 v.$id = `${payload}&${v.id}`;
                 v.related_resource_types.forEach(subItem => {

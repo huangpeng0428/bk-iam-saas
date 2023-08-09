@@ -32,7 +32,8 @@ import http from '@/api';
 // import il8n from '@/language';
 import preload from '@/common/preload';
 import { bus } from '@/common/bus';
-import { existValue, getParamsValue, getTreeNode } from '@/common/util';
+// import { existValue, getParamsValue, getTreeNode } from '@/common/util';
+import { existValue, getParamsValue } from '@/common/util';
 import { getRouterDiff, getNavRouterDiff } from '@/common/router-handle';
 import { messageError } from '@/common/bkmagic';
 
@@ -89,15 +90,16 @@ export const beforeEach = async (to, from, next) => {
   // if (curRole === 'staff') {
   //     await store.dispatch('role/updateCurrentRole', { id: 0 });
   // }
-  const roleList = await store.dispatch('roleList', {
-    cancelWhenRouteChange: false,
-    cancelPrevious: false
-  });
+  // 递归改成分级展开
+  // const roleList = await store.dispatch('roleList', {
+  //   cancelWhenRouteChange: false,
+  //   cancelPrevious: false
+  // });
 
   async function getExternalRole () {
     const { role_id: externalRoleId } = to.query;
     try {
-      await store.dispatch('role/updateCurrentRole', { id: +externalRoleId });
+      await store.dispatch('role/updateCurrentRole', { id: Number(externalRoleId) });
       await store.dispatch('userInfo');
       next();
     } catch (error) {
@@ -116,39 +118,46 @@ export const beforeEach = async (to, from, next) => {
     // }
   }
 
-  if (['applyCustomPerm', 'myManageSpace', 'myPerm', 'permTransfer', 'permRenewal'].includes(to.name)
+  async function getManagerInfo () {
+    const { code } = await store.dispatch('role/updateCurrentRole', { id: Number(currentRoleId) });
+    if (code === 0) {
+      const { role } = await store.dispatch('userInfo');
+      curRole = role.type;
+    } else {
+      next({ path: `${SITE_URL}${defaultRoute[navIndex]}` });
+    }
+  }
+
+  // 根据不同权限处理不同的导航栏索引
+  function navDiffMenuIndex (index) {
+    navIndex = index;
+    store.commit('updateIndex', index);
+    window.localStorage.setItem('index', index);
+  }
+
+  if (['applyJoinUserGroup', 'applyCustomPerm', 'myManageSpace', 'myPerm', 'permTransfer', 'permRenewal'].includes(to.name)
       || (['permRenewal'].includes(to.name) && to.query.source === 'email')) {
     await store.dispatch('role/updateCurrentRole', { id: 0 });
     await store.dispatch('userInfo');
     curRole = 'staff';
-    navIndex = 0;
-    store.commit('updateIndex', 0);
-    window.localStorage.setItem('index', 0);
+    navDiffMenuIndex(0);
   }
  
   if (['userGroup', 'permTemplate', 'approvalProcess'].includes(to.name)) {
-    navIndex = 1;
     await store.dispatch('role/updateCurrentRole', { id: curRoleId });
-    store.commit('updateIndex', 1);
-    window.localStorage.setItem('index', 1);
+    navDiffMenuIndex(1);
   }
   if (to.name === 'userGroupDetail') {
-    navIndex = 1;
+    navDiffMenuIndex(1);
     store.dispatch('versionLogInfo');
     if (existValue('externalApp') && to.query.hasOwnProperty('role_id')) {
       getExternalRole();
     } else {
       if (currentRoleId) {
         // const currentRole = roleList.find((item) => String(item.id) === currentRoleId);
-        const currentRole = getTreeNode(+currentRoleId, roleList);
-        if (currentRole) {
-          await store.dispatch('role/updateCurrentRole', { id: +currentRoleId });
-          await store.dispatch('userInfo');
-          curRole = currentRole.type;
-          next();
-        } else {
-          next({ path: `${SITE_URL}${defaultRoute[navIndex]}` });
-        }
+        // 从之前的拓扑接口更换成一级、二级接口
+        // const currentRole = getTreeNode(+currentRoleId, roleList);
+        await getManagerInfo();
       } else {
         const noFrom = !from.name;
         // 说明是刷新页面
@@ -171,16 +180,9 @@ export const beforeEach = async (to, from, next) => {
       //     cancelPrevious: false
       // });
       // const currentRole = roleList.find((item) => String(item.id) === currentRoleId);
-      const currentRole = getTreeNode(+currentRoleId, roleList);
-      if (currentRole) {
-        await store.dispatch('role/updateCurrentRole', { id: +currentRoleId });
-        await store.dispatch('userInfo');
-        curRole = currentRole.type;
-        next();
-      } else {
-        next({ path: `${SITE_URL}${defaultRoute[navIndex]}` });
-        // next({ path: `${SITE_URL}user-group` });
-      }
+      // const currentRole = getTreeNode(currentRoleId, roleList);
+      // await getExternalRole();
+      await getManagerInfo();
     } else {
       if (existValue('externalApp')) { // 外部嵌入页面
         next();
@@ -202,15 +204,16 @@ export const beforeEach = async (to, from, next) => {
   } else {
     // 邮件点击续期跳转过来的链接需要做身份的前置判断
     if (to.name === 'groupPermRenewal' && to.query.source === 'email' && currentRoleId) {
-      await store.dispatch('role/updateCurrentRole', { id: +currentRoleId });
-      await store.dispatch('userInfo');
-      curRole = to.query.role_type;
+      // await store.dispatch('role/updateCurrentRole', { id: +currentRoleId });
+      // const { role } = await store.dispatch('userInfo');
+      // curRole = role.type;
+      await getManagerInfo();
+      navDiffMenuIndex(1);
     }
 
     if (existValue('externalApp') && to.query.hasOwnProperty('role_id')) {
       if (['groupPermRenewal', 'userGroup', 'userGroupDetail', 'createUserGroup', 'userGroupPermDetail'].includes(to.name)) {
-        store.commit('updateIndex', 1);
-        window.localStorage.setItem('index', 1);
+        navDiffMenuIndex(1);
       }
       getExternalRole();
     }

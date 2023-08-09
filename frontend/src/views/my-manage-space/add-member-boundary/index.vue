@@ -86,6 +86,8 @@
                       data-test-id="group_addGroupMemberDialog_tree_member"
                       :all-data="treeList"
                       :empty-data="emptyData"
+                      :has-selected-users="hasSelectedUsers"
+                      :has-selected-departments="hasSelectedDepartments"
                       :style="{ height: `${contentHeight - 52}px` }"
                       :is-rating-manager="curIsRatingManager"
                       :key="infiniteTreeKey"
@@ -100,10 +102,15 @@
                 <template v-if="isShowSearchResult">
                   <div class="search-content">
                     <template v-if="isHasSearchResult">
-                      <dialog-infinite-list ref="searchedResultsRef"
+                      <dialog-infinite-list
+                        ref="searchedResultsRef"
                         data-test-id="group_addGroupMemberDialog_list_searchResult"
-                        :all-data="searchedResult" :focus-index.sync="focusItemIndex"
-                        :is-disabled="isAll" style="height: 309px;"
+                        style="height: 309px;"
+                        :all-data="searchedResult"
+                        :focus-index.sync="focusItemIndex"
+                        :is-disabled="isAll"
+                        :has-selected-users="hasSelectedUsers"
+                        :has-selected-departments="hasSelectedDepartments"
                         @on-checked="handleSearchResultSelected">
                       </dialog-infinite-list>
                     </template>
@@ -146,7 +153,7 @@
                   </template>
                 </p>
                 <bk-button theme="primary"
-                  :style="{ width: '100%', marginTop: '35px' }"
+                  :style="{ width: '100%', marginTop: '10px' }"
                   :loading="manualAddLoading" :disabled="isManualDisabled || isAll"
                   data-test-id="group_addGroupMemberDialog_btn_addManualUser"
                   @click="handleAddManualUser">
@@ -207,8 +214,9 @@
                       </span>
                       <span
                         class="user-count"
-                        v-if="item.count &&
-                          !externalSystemsLayout.addMemberBoundary.hideInfiniteTreeCount"
+                        v-if="item.count
+                          && !externalSystemsLayout.addMemberBoundary.hideInfiniteTreeCount
+                          && enableOrganizationCount"
                       >
                         {{ '(' + item.count + `)`}}
                       </span>
@@ -409,6 +417,7 @@
         users: [],
         departments: [],
         subject_scopes: [],
+        enableOrganizationCount: window.ENABLE_ORGANIZATION_COUNT.toLowerCase() === 'true',
         emptyData: {
           type: '',
           text: '',
@@ -418,7 +427,7 @@
       };
     },
     computed: {
-            ...mapGetters(['externalSystemsLayout']),
+            ...mapGetters(['user', 'externalSystemsLayout']),
             isLoading () {
                 return this.requestQueue.length > 0;
             },
@@ -479,7 +488,10 @@
                 return this.isRatingManager;
             },
             isHierarchicalAdmin () {
-                return this.$store.getters.roleList.find(item => item.id === this.$store.getters.navCurRoleId) || {};
+              // const { navCurRoleId, curRoleId, roleList } = this.$store.getters;
+              // const roleId = navCurRoleId || curRoleId;
+              // return roleList.find(item => item.id === roleId) || {};
+              return this.user.role || {};
             },
             contentHeight () {
                 return getWindowHeight() - 120;
@@ -726,11 +738,16 @@
           }
         } catch (e) {
           console.error(e);
-          this.bkMessageInstance = this.$bkMessage({
-            limit: 1,
-            theme: 'error',
-            message: this.$t(`m.verify['用户名输入格式错误]`)
-          });
+          const { response } = e;
+          if (response && [400].includes(response.status)) {
+            this.messageError(this.$t(`m.verify['用户名输入格式错误']`), 2000);
+          } else {
+            this.bkMessageInstance = this.$bkMessage({
+              limit: 1,
+              theme: 'error',
+              message: e.message || e.data.msg || e.statusText
+            });
+          }
         } finally {
           this.manualAddLoading = false;
         }
@@ -1413,9 +1430,14 @@
       },
 
       async handleSkip () {
-        bus.$emit('nav-change', { id: this.$store.getters.navCurRoleId }, 0);
-        await this.$store.dispatch('role/updateCurrentRole', { id: 0 });
-        const routeData = this.$router.resolve({ path: `${this.$store.getters.navCurRoleId}/rating-manager-edit`, params: { id: this.$store.getters.navCurRoleId } });
+        // bus.$emit('nav-change', { id: this.$store.getters.navCurRoleId }, 0);
+        // await this.$store.dispatch('role/updateCurrentRole', { id: 0 });
+        // const routeData = this.$router.resolve({ path: `${this.$store.getters.navCurRoleId}/rating-manager-edit`, params: { id: this.$store.getters.navCurRoleId } });
+        // window.open(routeData.href, '_blank');
+        const routeData = this.$router.resolve({
+          name: 'authorBoundaryEditFirstLevel',
+          params: { id: this.$store.getters.curRoleId }
+        });
         window.open(routeData.href, '_blank');
       }
     },
@@ -1642,9 +1664,8 @@
                 padding-right: 10px;
 
                 .manual-error-text {
-                    position: absolute;
+                    /* position: absolute; */
                     width: 400px;
-                    line-height: 1;
                     margin-top: 4px;
                     font-size: 12px;
                     color: #ff4d4d;

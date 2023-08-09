@@ -111,6 +111,8 @@
                     :key="infiniteTreeKey"
                     :is-disabled="isAll"
                     :empty-data="emptyData"
+                    :has-selected-users="hasSelectedUsers"
+                    :has-selected-departments="hasSelectedDepartments"
                     @async-load-nodes="handleRemoteLoadNode"
                     @expand-node="handleExpanded"
                     @on-select="handleOnSelected"
@@ -128,6 +130,8 @@
                       :all-data="searchedResult"
                       :focus-index.sync="focusItemIndex"
                       :is-disabled="isAll"
+                      :has-selected-users="hasSelectedUsers"
+                      :has-selected-departments="hasSelectedDepartments"
                       style="height: 309px;"
                       @on-checked="handleSearchResultSelected">
                     </dialog-infinite-list>
@@ -155,16 +159,20 @@
                 </div>
               </template>
             </div>
-            <div class="manual-wrapper" v-if="!isOrganization">
+            <div
+              v-if="!isOrganization"
+              class="manual-wrapper"
+            >
               <bk-input
-                :placeholder="$t(`m.common['手动输入提示']`)"
-                data-test-id="group_addGroupMemberDialog_input_manualUser"
+                ref="manualInputRef"
                 type="textarea"
-                :rows="14"
                 v-model="manualValue"
+                data-test-id="group_addGroupMemberDialog_input_manualUser"
+                :placeholder="$t(`m.common['手动输入提示']`)"
+                :rows="14"
                 :disabled="isAll"
-                @input="handleManualInput">
-              </bk-input>
+                @input="handleManualInput"
+              />
               <p class="manual-error-text" v-if="isManualInputOverLimit">{{ $t(`m.common['手动输入提示1']`) }}</p>
               <p class="manual-error-text pr10" v-if="manualInputError">
                 {{ $t(`m.common['手动输入提示2']`) }}
@@ -174,7 +182,7 @@
               </p>
               <bk-button
                 theme="primary"
-                :style="{ width: '100%', marginTop: '35px' }"
+                :style="{ width: '100%', marginTop: '10px' }"
                 :loading="manualAddLoading"
                 :disabled="isManualDisabled || isAll"
                 data-test-id="group_addGroupMemberDialog_btn_addManualUser"
@@ -189,9 +197,9 @@
                 <template v-if="curLanguageIsCn">
                   {{ $t(`m.common['已选择']`) }}
                   <template v-if="isShowSelectedText">
-                    <span class="organization-count">{{ hasSelectedDepartments.length }}</span>
-                    {{ $t(`m.common['个']`) }} {{ $t(`m.common['组织']`) }}{{ $t(`m.common['，']`) }}
-                    <span class="user-count">{{ hasSelectedUsers.length }}</span>{{ $t(`m.common['个']`) }} {{ $t(`m.common['用户']`) }}
+                    <span class="organization-count">{{ hasSelectedDepartments.length }}</span>{{ $t(`m.common['个']`) }}{{ $t(`m.common['组织']`) }}
+                    {{ $t(`m.common['，']`) }}
+                    <span class="user-count">{{ hasSelectedUsers.length }}</span>{{ $t(`m.common['个']`) }}{{ $t(`m.common['用户']`) }}
                   </template>
                   <template v-else>
                     <span class="user-count">0</span>
@@ -215,7 +223,7 @@
                 <div class="organization-item" v-for="item in hasSelectedDepartments" :key="item.id">
                   <Icon type="file-close" class="folder-icon" />
                   <span class="organization-name" :title="nameType(item)">{{ item.name }}</span>
-                  <span class="user-count" v-if="item.showCount">{{ '(' + item.count + `)` }}</span>
+                  <span class="user-count" v-if="item.showCount && enableOrganizationCount">{{ '(' + item.count + `)` }}</span>
                   <Icon bk type="close-circle-shape" class="delete-depart-icon" @click="handleDelete(item, 'organization')" />
                 </div>
               </div>
@@ -272,7 +280,8 @@
   import dialogInfiniteList from '@/components/dialog-infinite-list';
   import IamDeadline from '@/components/iam-deadline/horizontal';
   import { guid, formatCodeData } from '@/common/util';
-  import { bus } from '@/common/bus';
+  import { mapGetters } from 'vuex';
+  // import { bus } from '@/common/bus';
 
   // 去除()以及之间的字符
   const getUsername = (str) => {
@@ -286,6 +295,7 @@
 
   export default {
     name: '',
+    inject: ['getGroupAttributes'],
     components: {
       InfiniteTree,
       dialogInfiniteList,
@@ -390,9 +400,14 @@
         manualAddLoading: false,
         manualInputError: false,
         manualValueBackup: [],
+        manualOrgList: [],
+        filterUserList: [],
+        filterDepartList: [],
+        usernameList: [],
         isAll: false,
         isAllFlag: false,
         externalSource: '',
+        enableOrganizationCount: window.ENABLE_ORGANIZATION_COUNT.toLowerCase() === 'true',
         emptyData: {
           type: '',
           text: '',
@@ -402,6 +417,7 @@
       };
     },
     computed: {
+      ...mapGetters(['user']),
       isLoading () {
         return this.requestQueue.length > 0;
       },
@@ -477,7 +493,9 @@
         return this.isRatingManager;
       },
       isHierarchicalAdmin () {
-        return this.$store.getters.roleList.find(item => item.id === this.$store.getters.navCurRoleId) || {};
+        // const { navCurRoleId, curRoleId, roleList } = this.$store.getters;
+        // const roleId = navCurRoleId || curRoleId;
+        return this.user.role || {};
       },
       nameType () {
         return (payload) => {
@@ -588,31 +606,67 @@
         this.tabActive = name;
         // 已选择的需要从输入框中去掉
         if (this.tabActive === 'manual'
-          && this.hasSelectedUsers.length > 0
+          && (this.hasSelectedUsers.length > 0
+            || this.hasSelectedDepartments.length > 0)
           && this.manualValue !== '') {
+          this.fetchRegOrgData();
           const templateArr = [];
           const usernameList = this.hasSelectedUsers.map(item => item.username);
-          const manualValueBackup = this.manualValueActual.split(';').filter(item => item !== '');
+          const manualValueBackup = this.filterUserList.filter(item => item !== '');
           manualValueBackup.forEach(item => {
             const name = getUsername(item);
             if (!usernameList.includes(name)) {
               templateArr.push(item);
             }
           });
-          this.manualValue = templateArr.join(';');
+          // 处理切换tab后按原有的格式回显
+          const hasSelectedData = this.manualValueActual.split(';').filter(item => templateArr.includes(item) || this.filterDepartList.includes(item));
+          this.manualValue = hasSelectedData.join('\n');
         }
       },
 
-      handleManualInput () {
+      handleManualInput (value) {
+        this.manualOrgList = [];
+        if (value) {
+          const inputValue = value.split()[0];
+          if (inputValue.indexOf('{') > -1 && inputValue.indexOf('}') > -1) {
+            const splitValue = value.split(/\n/).map(item => {
+              const str = item.slice(item.indexOf('{') + 1, item.indexOf('}'));
+              if (item.indexOf('{') > -1 && item.indexOf('}') > -1 && /^[+-]?\d*(\.\d*)?(e[+-]?\d+)?$/.test(str)) {
+                this.manualOrgList.push(item);
+                item = item.substring(item.indexOf('{'), item.indexOf('&') > -1 ? item.indexOf('&') : item.length);
+              }
+              return item;
+            });
+            if (this.$refs.manualInputRef) {
+              this.manualValue = splitValue.join('\n');
+              this.$refs.manualInputRef.curValue = splitValue.join('\n');
+            }
+          }
+        }
         this.manualInputError = false;
       },
 
+      fetchRegOrgData () {
+        const manualList = this.manualValueActual.split(';').filter(item => item !== '');
+        this.filterDepartList = manualList.filter(item => {
+          if (item.indexOf('{') > -1 && item.indexOf('}') > -1) {
+            const str = item.slice(item.indexOf('{') + 1, item.indexOf('}'));
+            if (/^[+-]?\d*(\.\d*)?(e[+-]?\d+)?$/.test(str)) {
+              return item;
+            }
+          }
+        });
+        this.filterUserList = manualList.filter(item => !this.filterDepartList.includes(item));
+      },
+
       async handleAddManualUser () {
+        this.fetchRegOrgData();
         this.manualAddLoading = true;
         try {
           const url = this.isRatingManager ? 'role/queryRolesUsers' : 'organization/verifyManualUser';
           const res = await this.$store.dispatch(url, {
-            usernames: this.manualValueActual.split(';').filter(item => item !== '').map(item => {
+            usernames: this.filterUserList.map(item => {
               return getUsername(item);
             })
           });
@@ -623,8 +677,8 @@
             }
           );
           this.hasSelectedUsers.push(...temps);
-          if (res.data.length > 0) {
-            const usernameList = res.data.map(item => item.username);
+          if (res.data.length) {
+            this.usernameList = res.data.map(item => item.username);
             // 分号拼接
             // const templateArr = [];
             // this.manualValueBackup = this.manualValueActual.split(';').filter(item => item !== '');
@@ -637,26 +691,130 @@
             // this.manualValue = templateArr.join(';');
 
             // 保存原有格式
-            let formatStr = this.manualValue;
-            usernameList.forEach(item => {
-              formatStr = formatStr.replace(this.evil('/' + item + '(;\\n|\\s\\n|;|\\s|\\n|)/g'), '');
+            let formatStr = _.cloneDeep(this.manualValue);
+            this.usernameList.forEach(item => {
+              // 去掉之前有查全局的写法， 如果username有多个重复的item, 比如shengjieliu03@shengjietest.com、shengjieliu05的时候/g就会有问题
+              // formatStr = formatStr.replace(this.evil('/' + item + '(;\\n|\\s\\n|)/g'), '');
+
+              // 处理既有部门又有用户且不连续相同类型的展示数据
+              formatStr = formatStr.replace(this.evil('/' + item + '(;\\n|\\s\\n|)/'), '').replace('\n\n', '\n').replace('\s\s', '\s').replace(';;', '');
             });
-            this.manualValue = formatStr;
-            if (this.manualValue !== '') {
+            // 处理只选择全部符合条件的用户，还存在特殊符号的情况
+            if (formatStr === '\n' || formatStr === '\s' || formatStr === ';') {
+              formatStr = '';
+            }
+            this.manualValue = _.cloneDeep(formatStr);
+            this.formatOrgAndUser();
+          } else {
+            this.formatOrgAndUser();
+          }
+        } catch (e) {
+          console.error(e);
+          const { response } = e;
+          // 处理如果是前端校验为空导致的报错，使用前端自定义提示
+          if (response && [400].includes(response.status)) {
+            this.messageError(this.$t(`m.verify['用户名输入格式错误']`), 2000);
+          } else {
+            this.bkMessageInstance = this.$bkMessage({
+              limit: 1,
+              theme: 'error',
+              message: e.message || e.data.msg || e.statusText
+            });
+          }
+        } finally {
+          this.manualAddLoading = false;
+        }
+      },
+
+      // 处理只复制部门或者部门和用户一起复制情况
+      async formatOrgAndUser () {
+        if (this.manualValue) {
+          // 校验查验失败的数据是不是属于部门
+          const departData = _.cloneDeep(this.manualValue.split(/;|\n|\s/));
+          const departGroups = this.filterDepartList.filter(item => departData.includes(item));
+          if (departGroups.length && this.getGroupAttributes) {
+            if (this.getGroupAttributes().source_from_role) {
+              this.messageError(this.$t(`m.common['管理员组不能添加部门']`), 2000);
+              this.manualInputError = true;
+              return;
+            }
+            // 重新组装粘贴的部门数据
+            const list = this.manualOrgList.map(item => {
+              return {
+                id: Number(item.slice(item.indexOf('{') + 1, item.indexOf('}'))),
+                name: item.slice(item.indexOf('}') + 1, item.indexOf('&') > -1 ? item.indexOf('&') : item.length),
+                count: item.slice(item.indexOf('&count=') + 7, item.length - 1),
+                full_name: item.slice(item.indexOf('&full_name=') + 11, item.indexOf('&count=')),
+                type: 'depart',
+                showCount: true
+              };
+            });
+            const result = await this.fetchSubjectScopeCheck(list);
+            if (result && result.length) {
+              const departTemp = result.filter(item => {
+                return !this.hasSelectedDepartments.map(subItem => subItem.id.toString()).includes(item.id.toString());
+              });
+              this.hasSelectedDepartments.push(...departTemp);
+              // 备份一份粘贴板里的内容，清除组织的数据，在过滤掉组织的数据
+              let clipboardValue = _.cloneDeep(this.manualValue);
+              this.manualOrgList.forEach(item => {
+                const displayValue = item.slice(item.indexOf('{'), item.indexOf('&') > -1 ? item.indexOf('&') : item.length);
+                const isScopeOrg = result.map(depart => String(depart.id)).includes(item.slice(item.indexOf('{') + 1, item.indexOf('}')));
+                if (clipboardValue.split(/;|\n|\s/).includes(displayValue) && isScopeOrg) {
+                  clipboardValue = clipboardValue.replace(displayValue, '');
+                }
+              });
+              // 处理不相连的数据之间存在特殊符号的情况
+              clipboardValue = clipboardValue.split(/;|\n|\s/).filter(item => item !== '').join('\n');
+              this.manualValue = _.cloneDeep(clipboardValue);
+              this.manualInputError = !!this.manualValue.length;
+            } else {
               this.manualInputError = true;
             }
           } else {
             this.manualInputError = true;
           }
+        }
+      },
+
+      // 校验部门/用户范围是否满足条件
+      async fetchSubjectScopeCheck (payload) {
+        const subjects = payload.map(item => {
+          const { id, type, username } = item;
+          const typeMap = {
+            depart: () => {
+              return {
+                type: 'department',
+                id
+              };
+            },
+            user: () => {
+              return {
+                type: 'user',
+                id: username
+              };
+            }
+          };
+          return typeMap[type]();
+        });
+        try {
+          const { code, data } = await this.$store.dispatch('organization/getSubjectScopeCheck', { subjects });
+          if (code === 0 && data) {
+            const result = payload.filter(item => {
+              if (item.type === 'depart') {
+                item.type = 'department';
+              }
+              return data.map(v => v.type).includes(item.type) && data.map(v => v.id).includes(String(item.id));
+            });
+            return result;
+          }
         } catch (e) {
-          console.error(e);
           this.bkMessageInstance = this.$bkMessage({
-            limit: 1,
+            limit: 2,
             theme: 'error',
-            message: this.$t(`m.verify['用户名输入格式错误]`)
+            ellipsisLine: 10,
+            message: e.message || e.data.msg || e.statusText
           });
-        } finally {
-          this.manualAddLoading = false;
         }
       },
 
@@ -885,7 +1043,7 @@
                 child.parentNodeId = item.id;
                 child.full_name = `${item.name}：${child.name}`;
 
-                if (this.hasSelectedDepartments.length > 0) {
+                if (this.hasSelectedDepartments.length) {
                   child.is_selected = this.hasSelectedDepartments.map(
                     item => item.id
                   ).includes(child.id);
@@ -1158,9 +1316,9 @@
 
               // parentNodeId + username 组合成id
               child.id = `${child.parentNodeId}${child.username}`;
-
               if (this.hasSelectedUsers.length > 0) {
-                child.is_selected = this.hasSelectedUsers.map(item => item.id).includes(child.id);
+                child.is_selected = this.hasSelectedUsers.map(item => item.id).includes(child.id)
+                  || this.hasSelectedUsers.map(item => `${child.parentNodeId}${item.username}`).includes(child.id);
               } else {
                 child.is_selected = false;
               }
@@ -1315,9 +1473,13 @@
       },
             
       async handleSkip () {
-        bus.$emit('nav-change', { id: this.$store.getters.navCurRoleId }, 0);
-        await this.$store.dispatch('role/updateCurrentRole', { id: 0 });
-        const routeData = this.$router.resolve({ path: `${this.$store.getters.navCurRoleId}/rating-manager-edit`, params: { id: this.$store.getters.navCurRoleId } });
+        // bus.$emit('nav-change', { id: this.$store.getters.navCurRoleId }, 0);
+        // await this.$store.dispatch('role/updateCurrentRole', { id: 0 });
+        // const routeData = this.$router.resolve({ path: `${this.$store.getters.navCurRoleId}/rating-manager-edit`, params: { id: this.$store.getters.navCurRoleId } });
+        const routeData = this.$router.resolve({
+          name: 'authorBoundaryEditFirstLevel',
+          params: { id: this.$store.getters.curRoleId }
+        });
         window.open(routeData.href, '_blank');
         // this.$router.push({
         //     name: 'gradingAdminEdit',
@@ -1493,9 +1655,8 @@
                 .manual-wrapper {
                     padding-right: 10px;
                     .manual-error-text {
-                        position: absolute;
+                        /* position: absolute; */
                         width: 320px;
-                        line-height: 1;
                         margin-top: 4px;
                         font-size: 12px;
                         color: #ff4d4d;

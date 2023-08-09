@@ -9,64 +9,86 @@
     ext-cls="iam-aggregate-resource-sideslider-cls"
     @update:isShow="handleCancel">
     <div slot="content" class="content" v-bkloading="{ isLoading: loading, opacity: 1 }">
-      <div class="select-wrapper">
-        <div class="left-content">
-          <topology-input
-            ref="topologyInput"
-            :is-filter="isFilter"
-            :placeholder="curPlaceholder"
-            @on-search="handleSearch" />
-          <div class="list-wrapper"
-            v-bkloading="{ isLoading: listLoading, opacity: 1 }"
-            @scroll="handleScroll">
-            <template v-if="!listLoading">
-              <p
-                v-for="item in selectList"
-                :key="item.id"
-                :title="item.id"
-                class="item">
-                <bk-checkbox
-                  :true-value="true"
-                  :false-value="false"
-                  v-model="item.checked"
-                  @change="handleSelected(...arguments, item)">
-                  {{ item.display_name }}
-                </bk-checkbox>
-              </p>
-              <div v-if="isScrollBottom" class="loading-item">
-                <div v-bkloading="{ isLoading: true, size: 'mini' }"></div>
-              </div>
-              <div class="empty-wrapper" v-if="selectList.length < 1 && !listLoading">
-                <ExceptionEmpty
-                  :type="emptyData.type"
-                  :empty-text="emptyData.text"
-                  :tip-text="emptyData.tip"
-                  :tip-type="emptyData.tipType"
-                  @on-clear="handleEmptyClear"
-                  @on-refresh="handleEmptyRefresh"
-                />
-              </div>
-            </template>
-          </div>
+      <div
+        v-if="isShowUnlimited"
+        class="no-limited-wrapper flex-between"
+        :style="{ borderBottom: !isHide ? 0 : '' }"
+        :title="$t(`m.resource['无限制总文案']`)">
+        <div class="no-limited-wrapper-left single-hide">
+          <Icon type="info-new" />
+          <span>{{ $t(`m.resource['无限制文案']`) }}</span>
         </div>
-        <div class="right-content">
-          <div class="right-header">
-            <span :class="['clear-action', { 'disabled': curSelectedList.length < 1 }]" @click.stop="handleClear">{{ $t(`m.common['清空']`) }}</span>
-          </div>
-          <section class="select-list-wrapper">
-            <p
-              v-for="item in curSelectedList"
-              :key="item.id"
-              class="selected-item">
-              <span class="name" :title="item.id">{{ item.display_name }}</span>
-              <span class="action" @click.stop="handleRemove(item)">{{ $t(`m.common['移除']`) }}</span>
-            </p>
-            <div class="empty-wrapper" v-if="curSelectedList.length < 1">
-              <ExceptionEmpty />
-            </div>
-          </section>
+        <div class="no-limited-wrapper-right">
+          <bk-checkbox
+            ext-cls="no-limit-checkbox"
+            v-model="notLimitValue"
+            :disabled="disabled"
+            @change="handleLimitChange">
+            {{ $t(`m.common['无限制']`) }}
+          </bk-checkbox>
         </div>
       </div>
+      <template v-if="!isHide">
+        <div class="select-wrapper">
+          <div class="left-content">
+            <topology-input
+              ref="topologyInput"
+              :is-filter="isFilter"
+              :placeholder="curPlaceholder"
+              :custom-style="{ padding: 0 }"
+              @on-search="handleSearch" />
+            <div class="list-wrapper"
+              v-bkloading="{ isLoading: listLoading, opacity: 1 }"
+              @scroll="handleScroll">
+              <template v-if="!listLoading">
+                <p
+                  v-for="item in selectList"
+                  :key="item.id"
+                  :title="item.id"
+                  class="item">
+                  <bk-checkbox
+                    :true-value="true"
+                    :false-value="false"
+                    v-model="item.checked"
+                    @change="handleSelected(...arguments, item)">
+                    {{ item.display_name }}
+                  </bk-checkbox>
+                </p>
+                <div v-if="isScrollBottom" class="loading-item">
+                  <div v-bkloading="{ isLoading: true, size: 'mini' }"></div>
+                </div>
+                <div class="empty-wrapper" v-if="selectList.length < 1 && !listLoading">
+                  <ExceptionEmpty
+                    :type="emptyData.type"
+                    :empty-text="emptyData.text"
+                    :tip-text="emptyData.tip"
+                    :tip-type="emptyData.tipType"
+                    @on-clear="handleEmptyClear"
+                    @on-refresh="handleEmptyRefresh"
+                  />
+                </div>
+              </template>
+            </div>
+          </div>
+          <div class="right-content">
+            <div class="right-header">
+              <span :class="['clear-action', { 'disabled': curSelectedList.length < 1 }]" @click.stop="handleClear">{{ $t(`m.common['清空']`) }}</span>
+            </div>
+            <section class="select-list-wrapper">
+              <p
+                v-for="item in curSelectedList"
+                :key="item.id"
+                class="selected-item">
+                <span class="name" :title="item.id">{{ item.display_name }}</span>
+                <span class="action" @click.stop="handleRemove(item)">{{ $t(`m.common['移除']`) }}</span>
+              </p>
+              <div class="empty-wrapper" v-if="curSelectedList.length < 1">
+                <ExceptionEmpty />
+              </div>
+            </section>
+          </div>
+        </div>
+      </template>
     </div>
     <div slot="footer" style="margin-left: 25px;">
       <bk-button theme="primary" @click="handleSave">{{ $t(`m.common['保存']`) }}</bk-button>
@@ -76,6 +98,7 @@
 </template>
 <script>
   import _ from 'lodash';
+  import { mapGetters } from 'vuex';
   import { leaveConfirm } from '@/common/leave-confirm';
   import { formatCodeData } from '@/common/util';
   import TopologyInput from '@/components/choose-ip/topology-input';
@@ -94,6 +117,14 @@
         type: Array,
         default: () => []
       },
+      data: {
+        type: Array,
+        default: () => []
+      },
+      originalData: {
+        type: Array,
+        default: () => []
+      },
       params: {
         type: Object,
         default: () => {
@@ -107,6 +138,18 @@
       isSuperManager: {
         type: Boolean,
         default: () => true
+      },
+      flag: {
+        type: String,
+        default: ''
+      },
+      disabled: {
+        type: Boolean,
+        default: false
+      },
+      selectionMode: {
+        type: String,
+        default: 'all'
       }
     },
     data () {
@@ -118,21 +161,28 @@
         },
         selectList: [],
         curSelectedList: [],
+        curSelectedIds: [],
+        conditionData: [],
+        requestQueue: [],
         searchValue: '',
         loading: false,
         isFilter: false,
         listLoading: false,
         isScrollBottom: false,
-        curSelectedIds: [],
+        isHide: false,
+        notLimitValue: false,
+        noLimitRoutes: ['createUserGroup', 'cloneUserGroup', 'addGroupPerm'], // 需要展示无限制的页面
         emptyData: {
           type: 'empty',
           text: '暂无数据',
           tip: '',
           tipType: ''
-        }
+        },
+        isAny: false
       };
     },
     computed: {
+      ...mapGetters(['user']),
       curPlaceholder () {
         if (this.params.name) {
           return `${this.$t(`m.common['搜索']`)} ${this.params.name}`;
@@ -147,15 +197,25 @@
       },
       isHasDefaultData () {
         return this.defaultList.length > 0;
+      },
+      isShowUnlimited () {
+        const result = ['applyCustomPerm'].includes(this.$route.name)
+        || (['super_manager', 'system_manager'].includes(this.user.role.type)
+         && this.noLimitRoutes.includes(this.$route.name));
+        return result;
       }
     },
     watch: {
       show: {
-        handler (value) {
+        async handler (value) {
           if (value) {
             this.pageChangeAlertMemo = window.changeAlert;
             window.changeAlert = 'iamSidesider';
-            if (this.isSuperManager && !this.isHasDefaultData) {
+            // 为了减少组件之间数据传递的代码量，这里再重新调用一次接口做任意类型数据的处理
+            if (this.params.curAggregateSystemId) {
+              await this.fetchAuthorizationScopeActions(this.params.curAggregateSystemId);
+            }
+            if ((this.isSuperManager && !this.isHasDefaultData) || this.isAny) {
               this.fetchData(true);
             } else {
               this.setSelectList(this.defaultList);
@@ -181,6 +241,28 @@
           }
         },
         immediate: true
+      },
+      params: {
+        handler (value) {
+          if (Object.keys(value).length) {
+            const { isNoLimited } = value;
+            this.notLimitValue = isNoLimited;
+            this.isHide = isNoLimited;
+            if (isNoLimited) {
+              this.handleClear();
+            }
+            this.$emit('on-init', false);
+          }
+        },
+        immediate: true
+      },
+      notLimitValue (value) {
+        if (value) {
+          this.conditionData.forEach(item => {
+            item.isInstanceEmpty = false;
+            item.isAttributeEmpty = false;
+          });
+        }
       }
     },
     created () {
@@ -223,6 +305,26 @@
         } finally {
           this.loading = false;
           this.listLoading = false;
+        }
+      },
+
+      async fetchAuthorizationScopeActions (id) {
+        try {
+          const { data } = await this.$store.dispatch(
+            'permTemplate/getAuthorizationScopeActions',
+            { systemId: id }
+          );
+          // 判断是否是任意
+          this.isAny = data && data.some(item => item.id === '*');
+        } catch (e) {
+          console.error(e);
+          this.bkMessageInstance = this.$bkMessage({
+            limit: 1,
+            theme: 'error',
+            message: e.message || e.data.msg || e.statusText,
+            ellipsisLine: 2,
+            ellipsisCopy: true
+          });
         }
       },
 
@@ -320,6 +422,32 @@
           this.listLoading = false;
         }
       },
+      
+      handleLimitChange (newVal, oldVal) {
+        window.changeAlert = true;
+        this.isHide = newVal;
+        // if (!newVal) {
+        //   const isInitializeData = this.originalData.length === 1 && this.originalData[0] === 'none';
+        //   if (!isInitializeData && this.originalData.length > 0) {
+        //     this.conditionData = _.cloneDeep(this.originalData);
+        //     const firstConditionData = this.conditionData[0];
+        //     if (firstConditionData.instance && firstConditionData.instance.length) {
+        //       firstConditionData.instanceExpanded = true;
+        //     }
+        //     if (firstConditionData.attribute && firstConditionData.attribute.length) {
+        //       firstConditionData.attributeExpanded = true;
+        //     }
+        //     return;
+        //   }
+        //   if (!this.curSelectedList.length) {
+        //     this.curSelectedList.push(new Condition({ selection_mode: this.selectionMode }, 'init', 'add'));
+        //   }
+        // }
+
+        if (!this.flag) {
+          this.$emit('on-limit-change');
+        }
+      },
 
       setSearchData () {
         let templateList = this.defaultList;
@@ -358,6 +486,26 @@
         }
       },
 
+      handleGetValue () {
+        const tempConditionData = _.cloneDeep(this.curSelectedList);
+        if (this.notLimitValue) {
+          return {
+            isEmpty: false,
+            data: []
+          };
+        }
+        if (!tempConditionData.length) {
+          return {
+            isEmpty: false,
+            data: ['none']
+          };
+        }
+        return {
+          isEmpty: false,
+          data: tempConditionData
+        };
+      },
+
       handleEmptyClear () {
         this.$refs.topologyInput.value = '';
         this.emptyData.tipType = '';
@@ -384,6 +532,12 @@
 
       handleSave () {
         window.changeAlert = false;
+        if (this.notLimitValue) {
+          this.curSelectedList = [];
+          this.selectList.forEach(item => {
+            item.checked = false;
+          });
+        }
         this.$emit('update:show', false);
         this.$emit('on-selected', _.cloneDeep(this.curSelectedList));
         this.resetData();
@@ -403,133 +557,76 @@
   };
 </script>
 <style lang="postcss">
-    .iam-aggregate-resource-sideslider-cls {
-        .content {
-            padding: 20px 25px;
-            height: calc(100vh - 114px);
+  .iam-aggregate-resource-sideslider-cls {
+    .content {
+        padding: 20px 25px;
+        height: calc(100vh - 114px);
+    }
+    .select-wrapper {
+        height: 480px;
+        display: flex;
+        justify-self: start;
+        border-top: 1px solid #dcdee5;
+    }
+    .no-limited-wrapper {
+      width: 100%;
+      height: 42px;
+      line-height: 39px;
+      font-size: 12px;
+      color: #63656e;
+      background-color: #fafbfd;
+      border: 1px solid #dcdee5;
+      padding: 0 21px 0 13px;
+      &-left {
+        max-width: calc(100% - 100px);
+      }
+      &-right {
+        .no-limit-checkbox {
+          .bk-checkbox-text {
+            font-size: 12px;
+          }
         }
-        .select-wrapper {
-            height: 480px;
-            display: flex;
-            justify-self: start;
-        }
-        .left-content {
-            width: 360px;
-            border-top: 1px solid #dcdee5;
-            border-bottom: 1px solid #dcdee5;
-            border-left: 1px solid #dcdee5;
-            .list-wrapper {
-                position: relative;
-                min-height: 446px;
-                padding: 5px 10px;
-                height: calc(100% - 32px);
-                overflow: auto;
-                /*滚动条整体样式*/
-                &::-webkit-scrollbar {
-                    width: 6px; /*竖向滚动条的宽度*/
-                    height: 6px; /*横向滚动条的高度*/
-                }
-                /*滚动条里面的小方块*/
-                &::-webkit-scrollbar-thumb {
-                    background: #dcdee5;
-                    border-radius: 3px;
-                }
-                /*滚动条轨道的样式*/
-                &::-webkit-scrollbar-track {
-                    background: transparent;
-                    border-radius: 3px;
-                }
-                .item {
-                    line-height: 24px;
-                    .bk-checkbox-text {
-                        font-size: 12px;
-                        /* max-width: 165px; */
-                        max-width: 300px;
-                        overflow: hidden;
-                        text-overflow: ellipsis;
-                        white-space: nowrap;
-                    }
-                }
-                .loading-item {
-                    line-height: 20px;
-                }
-                .empty-wrapper {
-                    position: absolute;
-                    left: 50%;
-                    top: 50%;
-                    transform: translate(-50%, -50%);
-                    img {
-                        width: 120px;
-                    }
-                }
-            }
-        }
-        .right-content {
+      }
+    }
+    .left-content {
+        width: 360px;
+        /* border-top: 1px solid #dcdee5; */
+        border-bottom: 1px solid #dcdee5;
+        border-left: 1px solid #dcdee5;
+        .list-wrapper {
             position: relative;
-            width: 560px;
-            border: 1px solid #dcdee5;
-            .right-header {
-                position: relative;
-                padding: 0 10px;
-                height: 32px;
-                line-height: 32px;
-                font-size: 14px;
-                border-bottom: 1px solid #dcdee5;
-                .clear-action {
-                    position: absolute;
-                    right: 10px;
+            min-height: 446px;
+            padding: 5px 10px;
+            height: calc(100% - 32px);
+            overflow: auto;
+            /*滚动条整体样式*/
+            &::-webkit-scrollbar {
+                width: 6px; /*竖向滚动条的宽度*/
+                height: 6px; /*横向滚动条的高度*/
+            }
+            /*滚动条里面的小方块*/
+            &::-webkit-scrollbar-thumb {
+                background: #dcdee5;
+                border-radius: 3px;
+            }
+            /*滚动条轨道的样式*/
+            &::-webkit-scrollbar-track {
+                background: transparent;
+                border-radius: 3px;
+            }
+            .item {
+                line-height: 24px;
+                .bk-checkbox-text {
                     font-size: 12px;
-                    color: #3a84ff;
-                    cursor: pointer;
-                    &:hover {
-                        color: #699df4;
-                    }
-                    &.disabled {
-                        color: #c4c6cc;
-                        cursor: not-allowed;
-                    }
-                }
-            }
-            .select-list-wrapper {
-                height: calc(100% - 32px);
-                overflow: auto;
-                /*滚动条整体样式*/
-                &::-webkit-scrollbar {
-                    width: 6px; /*竖向滚动条的宽度*/
-                    height: 6px; /*横向滚动条的高度*/
-                }
-                /*滚动条里面的小方块*/
-                &::-webkit-scrollbar-thumb {
-                    background: #dcdee5;
-                    border-radius: 3px;
-                }
-                /*滚动条轨道的样式*/
-                &::-webkit-scrollbar-track {
-                    background: transparent;
-                    border-radius: 3px;
-                }
-            }
-            .selected-item {
-                padding: 0 10px;
-                display: flex;
-                justify-content: space-between;
-                line-height: 32px;
-                font-size: 12px;
-                border-bottom: 1px solid #dcdee5;
-                .name {
-                    /* max-width: 400px; */
-                    max-width: 470px;
+                    /* max-width: 165px; */
+                    max-width: 300px;
                     overflow: hidden;
                     text-overflow: ellipsis;
                     white-space: nowrap;
                 }
-                .action {
-                    color: #3a84ff;
-                    cursor: pointer;
-                    &:hover {
-                        color: #699df4;
-                    }
-                }
+            }
+            .loading-item {
+                line-height: 20px;
             }
             .empty-wrapper {
                 position: absolute;
@@ -541,9 +638,88 @@
                 }
             }
         }
-        .bk-sideslider-footer {
-            background-color: #f5f6fa!important;
-            border-color: #dcdee5!important;
+    }
+    .right-content {
+        position: relative;
+        width: 560px;
+        border: 1px solid #dcdee5;
+        border-top: none;
+        .right-header {
+            position: relative;
+            padding: 0 10px;
+            height: 32px;
+            line-height: 32px;
+            font-size: 14px;
+            border-bottom: 1px solid #dcdee5;
+            .clear-action {
+                position: absolute;
+                right: 10px;
+                font-size: 12px;
+                color: #3a84ff;
+                cursor: pointer;
+                &:hover {
+                    color: #699df4;
+                }
+                &.disabled {
+                    color: #c4c6cc;
+                    cursor: not-allowed;
+                }
+            }
+        }
+        .select-list-wrapper {
+            height: calc(100% - 32px);
+            overflow: auto;
+            /*滚动条整体样式*/
+            &::-webkit-scrollbar {
+                width: 6px; /*竖向滚动条的宽度*/
+                height: 6px; /*横向滚动条的高度*/
+            }
+            /*滚动条里面的小方块*/
+            &::-webkit-scrollbar-thumb {
+                background: #dcdee5;
+                border-radius: 3px;
+            }
+            /*滚动条轨道的样式*/
+            &::-webkit-scrollbar-track {
+                background: transparent;
+                border-radius: 3px;
+            }
+        }
+        .selected-item {
+            padding: 0 10px;
+            display: flex;
+            justify-content: space-between;
+            line-height: 32px;
+            font-size: 12px;
+            border-bottom: 1px solid #dcdee5;
+            .name {
+                /* max-width: 400px; */
+                max-width: 470px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+            .action {
+                color: #3a84ff;
+                cursor: pointer;
+                &:hover {
+                    color: #699df4;
+                }
+            }
+        }
+        .empty-wrapper {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            img {
+                width: 120px;
+            }
         }
     }
+    .bk-sideslider-footer {
+        background-color: #f5f6fa!important;
+        border-color: #dcdee5!important;
+    }
+  }
 </style>

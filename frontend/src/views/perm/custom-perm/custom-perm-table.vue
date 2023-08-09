@@ -36,20 +36,20 @@
                 v-if="isShowPreview(row)"
                 type="detail-new"
                 class="view-icon"
-                :title="$t(`m.common['详情']`)"
+                :title="$t(`m.perm['查看实例资源权限组']`)"
                 @click.stop="handleViewResource(_, row)"
               />
               <Icon
-                v-if="isShowPreview(row) && row.resource_groups.length > 2"
-                type="reduce-hollow"
-                :title="$t(`m.common['删除']`)"
+                v-if="isShowPreview(row) && row.resource_groups.length > 1"
+                type="delete-line"
+                :title="$t(`m.perm['删除实例资源权限组']`)"
                 :class="row.resource_groups.length > 1 ? 'effect-icon' : 'effect-icon-disabled'"
                 @click.stop="handlerReduceInstance(_, row)"
               />
             </div>
           </template>
           <template v-else>
-            <span class="pl20">{{ $t(`m.common['无需关联实例']`) }}</span>
+            <span class="pl20" style="line-height: 62px;">{{ $t(`m.common['无需关联实例']`) }}</span>
           </template>
         </template>
       </bk-table-column>
@@ -81,9 +81,19 @@
         </template>
       </bk-table-column>
       <bk-table-column prop="expired_dis" min-width="100" :label="$t(`m.common['有效期']`)"></bk-table-column>
-      <bk-table-column :label="$t(`m.common['操作']`)">
+      <bk-table-column
+        :label="$t(`m.common['操作-table']`)"
+        :width="200"
+      >
         <template slot-scope="{ row }">
-          <bk-button text @click="handleShowDelDialog(row)">{{ $t(`m.common['删除']`) }}</bk-button>
+          <div class="custom-actions-item">
+            <bk-button
+              type="primary"
+              text
+              @click="handleShowDelDialog(row)">
+              {{ $t(`m.userGroupDetail['删除操作权限']`) }}
+            </bk-button>
+          </div>
         </template>
       </bk-table-column>
       <template slot="empty">
@@ -110,7 +120,7 @@
     <bk-sideslider
       :is-show="isShowSideslider"
       :title="sidesliderTitle"
-      :width="725"
+      :width="960"
       quick-close
       data-test-id="myPerm_sideslider_resourceInsance"
       @update:isShow="handleResourceCancel"
@@ -193,7 +203,7 @@
     <bk-sideslider
       :is-show="isShowEnvironmentsSideslider"
       :title="environmentsSidesliderTitle"
-      :width="725"
+      :width="640"
       quick-close
       @update:isShow="handleResourceCancel"
       ext-cls="effect-conditon-side"
@@ -212,7 +222,7 @@
     <bk-sideslider
       :is-show="isShowResourceInstanceEffectTime"
       :title="environmentsSidesliderTitle"
-      :width="725"
+      :width="640"
       quick-close
       @update:isShow="handleResourceEffectTimeCancel"
       :ext-cls="'relate-instance-sideslider'"
@@ -418,10 +428,12 @@
       handleActionLinearData () {
         const linearActions = [];
         this.originalCustomTmplList.forEach((item, index) => {
+          item.actions = item.actions.filter(v => !v.hidden);
           item.actions.forEach(act => {
             linearActions.push(act);
-          })
-          ;(item.sub_groups || []).forEach(sub => {
+          });
+          (item.sub_groups || []).forEach(sub => {
+            sub.actions = sub.actions.filter(v => !v.hidden);
             sub.actions.forEach(act => {
               linearActions.push(act);
             });

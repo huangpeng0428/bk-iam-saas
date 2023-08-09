@@ -35,7 +35,10 @@
           <template v-if="item.type === 'user' && item.name !== ''">({{ item.name }})</template>
         </span>
         <span class="red-dot" v-if="item.isNewMember"></span>
-        <span class="node-user-count" v-if="item.showCount && !externalSystemsLayout.addMemberBoundary.hideInfiniteTreeCount">
+        <span
+          v-if="item.showCount && !externalSystemsLayout.addMemberBoundary.hideInfiniteTreeCount && enableOrganizationCount"
+          class="node-user-count"
+        >
           {{ '(' + item.count + `)` }}
         </span>
         <spin-loading ext-cls="loading" v-if="item.loading" />
@@ -43,7 +46,7 @@
           <span class="node-checkbox"
             :class="{
               'is-disabled': disabledNode(item),
-              'is-checked': item.is_selected,
+              'is-checked': selectedNode(item),
               'is-indeterminate': item.indeterminate
             }"
             @click.stop="handleNodeClick(item)">
@@ -122,13 +125,22 @@
             tipType: ''
           };
         }
+      },
+      hasSelectedDepartments: {
+        type: Array,
+        default: () => []
+      },
+      hasSelectedUsers: {
+        type: Array,
+        default: () => []
       }
     },
     data () {
       return {
         startIndex: 0,
         endIndex: 0,
-        clickTriggerTypeBat: this.clickTriggerType
+        clickTriggerTypeBat: this.clickTriggerType,
+        enableOrganizationCount: window.ENABLE_ORGANIZATION_COUNT.toLowerCase() === 'true'
       };
     },
     computed: {
@@ -196,6 +208,19 @@
                     const isDisabled = payload.disabled || this.isDisabled;
                     return this.getGroupAttributes ? isDisabled || (this.getGroupAttributes().source_from_role && payload.type === 'depart') : isDisabled;
                 };
+            },
+            selectedNode () {
+                return (payload) => {
+                    if (this.hasSelectedDepartments.length) {
+                      payload.is_selected = this.hasSelectedDepartments.map(
+                        item => item.id.toString()).includes(payload.id.toString());
+                    }
+                    if (this.hasSelectedUsers.length) {
+                      payload.is_selected = this.hasSelectedUsers.map(
+                        item => item.username).includes(payload.username);
+                    }
+                    return payload.is_selected;
+                };
             }
     },
     watch: {
@@ -232,7 +257,7 @@
        */
       rootScroll: _.throttle(function () {
         this.updateRenderData(this.$el.scrollTop);
-      }, 0),
+      }, 100),
 
       /**
        * 更新可视区渲染的数据列表

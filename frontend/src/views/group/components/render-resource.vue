@@ -46,6 +46,7 @@
                   :limit-value="getLimitInstance(conditionLimitData[index])"
                   :select-list="curSelectList(index)"
                   :select-value="curSelectValue(index)"
+                  :system-params="params"
                   @on-tree-select="handlePathSelect(...arguments, index)" />
                 <div class="drag-dotted-line" v-if="isDrag" :style="dottedLineStyle"></div>
                 <div class="drag-line"
@@ -61,7 +62,7 @@
                 <template v-if="condition.instance && condition.instance.length > 0">
                   <instance-view
                     :data="condition.instance"
-                    @on-delete="handleIntanceDelete(...arguments, index)"
+                    @on-delete="handleInstanceDelete(...arguments, index)"
                     @on-clear="handleInstanceClearAll(...arguments, index)" />
                 </template>
                 <template v-else>
@@ -194,6 +195,12 @@
         }
       },
       curSelectionCondition: {
+        type: Array,
+        default: () => {
+          return [];
+        }
+      },
+      instancePaths: {
         type: Array,
         default: () => {
           return [];
@@ -754,7 +761,7 @@
         }
       },
 
-      handleIntanceDelete (payload, payloadIndex, childIndex, index) {
+      handleInstanceDelete (payload, payloadIndex, childIndex, index) {
         // const curIds = payload.parentChain.map(v => `${v.id}&${v.type}`)
 
         // const curInstance = this.conditionData[index].instance
@@ -790,6 +797,7 @@
           id = data[idIndex - 1].id;
           type = data[idIndex - 1].type;
         }
+        this.$emit('on-delete-instance', { path: curPath[childIndex] });
         curPath.splice(childIndex, 1);
         curPaths.splice(childIndex, 1);
         if (curInstance.every(item => item.path.length < 1)) {
@@ -1017,6 +1025,7 @@
 
           const tempPaths = paths[0];
           const deleteIndexTemp = deleteInstanceItem.paths.findIndex(item => item.map(v => `${v.id}&${v.type}`).join('') === tempPaths.map(v => `${v.id}&${v.type}`).join(''));
+          this.$emit('on-delete-instance', { path: deleteInstanceItem.paths[deleteIndexTemp] });
           deleteInstanceItem.paths.splice(deleteIndexTemp, 1);
         }
       }

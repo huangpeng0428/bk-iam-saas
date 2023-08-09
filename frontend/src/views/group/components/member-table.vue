@@ -1,18 +1,72 @@
 <template>
   <div class="iam-user-group-member">
     <render-search>
-      <bk-button :disabled="readOnly" @click="handleAddMember">{{ $t(`m.userGroup['添加成员']`) }}</bk-button>
-      <bk-button
-        :disabled="isNoBatchDelete()"
-        :title="adminGroupTitle"
-        @click="handleBatchDelete">
-        {{ $t(`m.common['批量移除']`) }}
-      </bk-button>
+      <div class="flex-between group-member-button">
+        <bk-button :disabled="readOnly" @click="handleAddMember">
+          {{ $t(`m.userGroup['添加成员']`) }}
+        </bk-button>
+        <bk-button
+          :disabled="isNoBatchDelete()"
+          :title="adminGroupTitle"
+          @click="handleBatchDelete">
+          {{ $t(`m.common['批量移除']`) }}
+        </bk-button>
+        <div>
+          <bk-dropdown-menu
+            ref="dropdown"
+            :disabled="readOnly"
+            @show="handleDropdownShow"
+            @hide="handleDropdownHide"
+          >
+            <div
+              class="group-dropdown-trigger-btn"
+              slot="dropdown-trigger"
+            >
+              <span class="group-dropdown-text">{{ $t(`m.userGroup['复制成员']`) }}</span>
+              <i
+                :class="[
+                  'bk-icon icon-angle-down',
+                  { 'icon-flip': isDropdownShow }
+                ]"
+              />
+            </div>
+            <ul class="bk-dropdown-list" slot="dropdown-content">
+              <li>
+                <a
+                  href="javascript:;"
+                  class="copy-selected-members"
+                  :data-clipboard-text="formatCopyMembers"
+                  @click="handleTriggerCopy(...arguments, 'selected')"
+                >
+                  {{ $t(`m.userGroup['复制已选成员']`) }}
+                </a>
+              </li>
+              <li>
+                <a
+                  href="javascript:;"
+                  class="copy-selected-members-all"
+                  @click="handleTriggerCopy(...arguments, 'all')">
+                  {{ $t(`m.userGroup['复制所有成员']`) }}
+                </a>
+              </li>
+            </ul>
+          </bk-dropdown-menu>
+        </div>
+      </div>
+      <div slot="right">
+        <bk-input
+          v-model="keyword"
+          style="width: 300px;"
+          :placeholder="$t(`m.userGroupDetail['请输入至少3个字符的用户/组织，按enter键搜索']`)"
+          @enter="handleKeyWordEnter"
+        />
+      </div>
     </render-search>
     <bk-table
       :data="tableList"
       size="small"
       ext-cls="user-group-member-table"
+      :cell-class-name="getCellClass"
       :outer-border="false"
       :header-border="false"
       :pagination="pagination"
@@ -33,8 +87,32 @@
           <div class="depart" v-else :title="row.full_name">
             <Icon type="organization-fill" />
             <span class="name">{{ row.name || '--' }}</span>
-            <span class="count" v-if="row.member_count">({{ row.member_count }})</span>
+            <span class="count" v-if="row.member_count && enableOrganizationCount">({{ row.member_count }})</span>
           </div>
+        </template>
+      </bk-table-column>
+      <bk-table-column :label="$t(`m.userGroupDetail['所属组织架构']`)" width="400">
+        <template slot-scope="{ row }">
+          <template v-if="row.type === 'user'">
+            <template v-if="row.user_departments && row.user_departments.length">
+              <div
+                :title="row.user_departments.join(';')"
+                v-for="(item,index) in row.user_departments"
+                :key="index"
+                class="user_departs"
+              >
+                {{ item}}
+              </div>
+            </template>
+            <template v-else>
+              <div>
+                --
+              </div>
+            </template>
+          </template>
+          <template v-else>
+            {{ row.full_name }}
+          </template>
         </template>
       </bk-table-column>
       <bk-table-column :label="$t(`m.common['加入时间']`)">
@@ -67,6 +145,7 @@
           :empty-text="emptyData.text"
           :tip-text="emptyData.tip"
           :tip-type="emptyData.tipType"
+          @on-clear="handleEmptyClear"
           @on-refresh="handleEmptyRefresh"
         />
       </template>
@@ -102,6 +181,7 @@
 </template>
 <script>
   import _ from 'lodash';
+  import ClipboardJS from 'clipboard';
   import { mapGetters } from 'vuex';
   import { PERMANENT_TIMESTAMP } from '@/common/constants';
   import { formatCodeData } from '@/common/util';
@@ -146,7 +226,7 @@
         currentSelectList: [],
         pagination: {
           current: 1,
-          count: 2,
+          count: 0,
           limit: 10
         },
         currentBackup: 1,
@@ -169,34 +249,41 @@
           tip: '',
           tipType: ''
         },
-        adminGroupTitle: ''
+        adminGroupTitle: '',
+        keyword: '',
+        enableOrganizationCount: window.ENABLE_ORGANIZATION_COUNT.toLowerCase() === 'true',
+        isDropdownShow: false
       };
     },
     computed: {
-            ...mapGetters(['user']),
-            isNoBatchDelete () {
-                return () => {
-                    const hasData = this.tableList.length && this.currentSelectList.length;
-                    if (this.getGroupAttributes && this.getGroupAttributes().source_from_role) {
-                        const isAll = hasData && this.currentSelectList.length === this.pagination.count;
-                        this.adminGroupTitle = isAll ? this.$t(`m.userGroup['管理员组至少保留一条数据']`) : '';
-                        return isAll;
-                    }
-                    return !hasData;
-                };
-            },
-            isRatingManager () {
-                return ['rating_manager', 'subset_manager'].includes(this.user.role.type);
-            },
-            curType () {
-                return this.curData.type || 'department';
-            },
-            disabledGroup () {
-                return () => {
-                    return this.getGroupAttributes && this.getGroupAttributes().source_from_role
-                    && this.pagination.count === 1;
-                };
+      ...mapGetters(['user']),
+      isNoBatchDelete () {
+        return () => {
+            const hasData = this.tableList.length && this.currentSelectList.length;
+            if (this.getGroupAttributes && this.getGroupAttributes().source_from_role) {
+                const isAll = hasData && this.currentSelectList.length === this.pagination.count;
+                this.adminGroupTitle = isAll ? this.$t(`m.userGroup['管理员组至少保留一条数据']`) : '';
+                return isAll;
             }
+            return !hasData;
+        };
+      },
+      isRatingManager () {
+          return ['rating_manager', 'subset_manager'].includes(this.user.role.type);
+      },
+      curType () {
+          return this.curData.type || 'department';
+      },
+      disabledGroup () {
+          return () => {
+              return this.getGroupAttributes && this.getGroupAttributes().source_from_role
+              && this.pagination.count === 1;
+          };
+      },
+      formatCopyMembers () {
+        return this.currentSelectList.length
+        ? this.currentSelectList.map(v => v.type === 'user' ? v.id : `{${v.id}}${v.name}&full_name=${v.full_name}&count=${v.member_count}*`).join('\n') : '';
+      }
     },
     watch: {
       'pagination.current' (value) {
@@ -221,28 +308,43 @@
       // window.addEventListener('message', this.fetchReceiveData);
     },
     methods: {
-            
       // 接收iframe父页面传递的message
       fetchReceiveData (payload) {
         const { data } = payload;
         console.log(data, '接受传递过来的数据');
         // this.fetchResetData(data);
       },
+
+      getCellClass ({ row, column, rowIndex, columnIndex }) {
+        if (columnIndex === 2) {
+          return 'iam-table-cell-depart-cls';
+        }
+        return '';
+      },
+
+      async handleKeyWordEnter () {
+        this.emptyData.tipType = 'search';
+        this.pagination = Object.assign(this.pagination, { current: 1, limit: 10 });
+        this.fetchMemberList();
+      },
+
       async fetchMemberList () {
         this.tableLoading = true;
         try {
           const params = {
             id: this.id,
             limit: this.pagination.limit,
-            offset: this.pagination.limit * (this.pagination.current - 1)
+            offset: this.pagination.limit * (this.pagination.current - 1),
+            keyword: this.keyword
           };
           const { code, data } = await this.$store.dispatch('userGroup/getUserGroupMemberList', params);
-          this.pagination.count = data.count;
+          this.pagination.count = data.count || 0;
           this.tableList.splice(0, this.tableList.length, ...(data.results || []));
           this.emptyData = formatCodeData(code, this.emptyData, this.tableList.length === 0);
         } catch (e) {
           console.error(e);
           const { code, data, message, statusText } = e;
+          this.tableList = [];
           this.emptyData = formatCodeData(code, this.emptyData);
           this.bkMessageInstance = this.$bkMessage({
             limit: 1,
@@ -256,11 +358,79 @@
         }
       },
 
+      handleDropdownShow () {
+        this.isDropdownShow = true;
+      },
+
+      handleDropdownHide () {
+        this.isDropdownShow = false;
+      },
+
+      async handleTriggerCopy (event, payload) {
+        // 需先保存currentTarget，因为此方法为异步方法，同步代码执行完成后，浏览器会将event事件对象的currentTarget值重置为空
+        const currentTarget = event.currentTarget;
+        const typeMap = {
+          selected: () => {
+            if (!this.currentSelectList.length) {
+              this.messageError(this.$t(`m.verify['请选择用户或组织成员']`), 2000);
+              return;
+            }
+            const clipboard = new ClipboardJS('.copy-selected-members');
+            clipboard.on('success', () => {
+              this.messageSuccess(this.$t(`m.info['已经复制到粘贴板，可在其他用户组添加成员时粘贴到手动输入框']`), 2000, 2);
+              // 调用后销毁，避免多次执行
+              if (clipboard) {
+                clipboard.destroy();
+              }
+            });
+            clipboard.on('error', (e) => {
+              console.error('复制失败', e);
+            });
+          },
+          all: async () => {
+            const params = {
+              id: this.id,
+              offset: 0,
+              limit: 1000
+            };
+            const { data } = await this.$store.dispatch('userGroup/getUserGroupMemberList', params);
+            if (data && data.results) {
+              if (!data.results.length) {
+                this.messageError(this.$t(`m.common['暂无可复制内容']`), 2000);
+                return;
+              }
+              const clipboard = new ClipboardJS(event.target, {
+                text: () => data.results.map(v => v.type === 'user' ? v.id : `{${v.id}}${v.name}&full_name=${v.full_name}&count=${v.member_count}*`).join('\n')
+              });
+              clipboard.on('success', () => {
+                this.messageSuccess(this.$t(`m.info['已经复制到粘贴板，可在其他用户组添加成员时粘贴到手动输入框']`), 2000, 2);
+              });
+              clipboard.on('error', (e) => {
+                console.error('复制失败', e);
+              });
+              clipboard.onClick({ currentTarget });
+              // 调用后销毁，避免多次执行
+              if (clipboard) {
+                clipboard.destroy();
+              }
+            }
+          }
+        };
+        typeMap[payload]();
+        this.$refs.dropdown.hide();
+      },
+
+      async handleEmptyClear () {
+        this.handleEmptyRefresh();
+      },
+
       async handleEmptyRefresh () {
+        this.emptyData.tipType = '';
+        this.keyword = '';
         this.pagination = Object.assign(
           this.pagination,
           {
-            offset: 0,
+            current: 1,
             limit: 10
           });
         await this.fetchMemberList();
@@ -490,4 +660,49 @@
             }
         }
     }
+</style>
+
+<style lang="postcss" scoped>
+/deep/ .iam-table-cell-depart-cls {
+  .cell {
+    padding: 5px 0;
+    -webkit-line-clamp: 100;
+    padding-left: 15px;
+    .user_departs {
+      margin-bottom: 10px;
+      word-break: break-all;
+      &:last-child {
+        margin-bottom: 0;
+      }
+    }
+  }
+}
+
+.group-member-button {
+  .bk-button {
+    margin-right: 10px;
+  }
+}
+
+.group-dropdown-trigger-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #c4c6cc;
+    height: 32px;
+    min-width: 68px;
+    border-radius: 2px;
+    padding: 0 15px;
+    color: #63656E;
+    &:hover {
+      cursor: pointer;
+      border-color: #979ba5;
+    }
+    .group-dropdown-text {
+      font-size: 14px;
+    }
+    .bk-icon {
+      font-size: 22px;
+    }
+}
 </style>

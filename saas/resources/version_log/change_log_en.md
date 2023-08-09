@@ -1,3 +1,54 @@
+<!-- 2023-07-31 -->
+# V1.10.12 ChangeLog
+
+### New Features
+* Custom permissions can be configured to allow multi-level administrator approval.
+* Batch unlimited permissions have been added to user group creation, cloning, and permission addition.
+* Batch copying of users and organization members has been added to user group management.
+
+### Bug Fixes
+Fixed an issue where clicking on "synchronize" in the user module->user type would result in a third-party interface exception.
+
+---
+
+<!-- 2023-07-26 -->
+# V1.10.11 ChangeLog
+
+### New Features
+* Switching ESB interface login, supporting ESB authentication for application permissions.
+
+---
+
+<!-- 2023-07-17 -->
+# V1.10.10 ChangeLog
+
+### New Features
+* Add department display to user group member list
+* Add permission details to expired permission list
+* Allow optional selection for aggregated operations
+* Allow level 1 administrators to directly access level 2 administrators
+
+---
+
+<!-- 2023-07-07 -->
+# V1.10.9 ChangeLog
+
+### Bug Fixes
+* Fixed the issue that the dependency operation was not synchronizing data when adding attribute conditions for user group permissions.
+* Fixed the issue that the system administrator member editing was abnormal, and the input box of the system administrator member was abnormal.
+* Added the requirement to add or remove all operation instances under a single system for "My Permissions".
+* Adjusted the layout of the module for deleting and viewing user group permissions.
+
+---
+
+<!-- 2023-07-05 -->
+# V1.10.8 ChangeLog
+
+### Bug Fixes
+* Fixing front-end internationalization issues
+
+---
+
 <!-- 2023-06-27 -->
 # V1.10.7 ChangeLog
 

@@ -201,7 +201,9 @@
         </form>
       </render-horizontal-block>
       <render-horizontal-block ext-cls="mt16" :label="$t(`m.permApply['关联资源实例']`)">
-        <section ref="instanceTableRef">
+        <section
+          ref="instanceTableRef"
+          class="normal-resource-instance-table">
           <resource-instance-table
             :list="tableData"
             :original-list="tableDataBackup"
@@ -212,14 +214,28 @@
             @on-select="handleResourceSelect"
             @on-realted-change="handleRelatedChange" />
           <div slot="append" class="expanded-action-wrapper">
-            <bk-switcher
-              v-model="isAllExpanded"
-              theme="primary"
-              size="small"
-              :disabled="isAggregateDisabled"
-              @change="handleAggregateActionChange">
-            </bk-switcher>
-            <span class="expanded-text">{{ isAllExpanded ? $t(`m.grading['逐项编辑']`) : $t(`m.grading['批量编辑']`) }}</span>
+            <div class="apply-custom-switch">
+              <div class="apply-custom-switch-item">
+                <bk-switcher
+                  v-model="isAllUnlimited"
+                  theme="primary"
+                  size="small"
+                  :disabled="isUnlimitedDisabled"
+                  @change="handleUnlimitedActionChange">
+                </bk-switcher>
+                <span class="expanded-text">{{ $t(`m.common['批量无限制']`) }}</span>
+              </div>
+              <div class="apply-custom-switch-item">
+                <bk-switcher
+                  v-model="isAllExpanded"
+                  theme="primary"
+                  size="small"
+                  :disabled="isAggregateDisabled"
+                  @change="handleAggregateActionChange">
+                </bk-switcher>
+                <span class="expanded-text">{{ isAllExpanded ? $t(`m.grading['逐项编辑']`) : $t(`m.grading['批量编辑']`) }}</span>
+              </div>
+            </div>
           </div>
         </section>
       </render-horizontal-block>
@@ -579,7 +595,7 @@
       :title="gradeSliderTitle"
       :quick-close="true"
       @animation-end="gradeSliderTitle === ''">
-      <div class="grade-memebers-content"
+      <div class="grade-members-content"
         slot="content"
         v-bkloading="{ isLoading: sliderLoading, opacity: 1 }">
         <template v-if="!sliderLoading">
@@ -649,6 +665,7 @@
         linearActionList: [],
         requestQueue: ['action', 'policy', 'aggregate', 'commonAction'],
         isAllExpanded: false,
+        isAllUnlimited: false,
         aggregationMap: [],
         aggregations: [],
         aggregationsBackup: [],
@@ -733,6 +750,15 @@
             || (this.tableData.length === 1 && !this.tableData[0].isAggregate);
             return isDisabled;
         },
+        isUnlimitedDisabled () {
+          const isDisabled = this.tableData.every(item =>
+           ((!item.resource_groups || (item.resource_groups && !item.resource_groups.length)) && !item.instances)
+           );
+           if (isDisabled) {
+            this.isAllUnlimited = false;
+           }
+          return isDisabled;
+        },
         curSelectActions () {
             const allActionIds = [];
             this.originalCustomTmplList.forEach(payload => {
@@ -751,7 +777,9 @@
                     });
                 }
             });
+            // 监听新增或移除的操作，重新组装数据
             this.getFilterAggregateAction();
+            this.handleUnlimitedActionChange(this.isAllUnlimited);
             return allActionIds;
         }
     },
@@ -774,6 +802,9 @@
             });
             this.sysAndtid = false;
           }
+          if (value.query.tab_key) {
+            this.handleTabChange(value.query.tab_key);
+          }
         },
         immediate: true
       },
@@ -788,6 +819,9 @@
           this.tagActionList = value.map(e => e.id);
           if (value.filter(item => item.isAggregate).length < 1) {
             this.isAllExpanded = false;
+          }
+          if (this.isDisabled && this.isAllUnlimited) {
+            this.isAllUnlimited = false;
           }
         },
         deep: true
@@ -1609,6 +1643,50 @@
       handleAggregateActionChange (payload) {
         this.getFilterAggregateAction();
         this.handleAggregateAction(payload);
+        this.handleUnlimitedActionChange(this.isAllUnlimited);
+      },
+
+      handleUnlimitedActionChange (payload) {
+        const tableData = _.cloneDeep(this.tableData);
+        tableData.forEach((item, index) => {
+          if (!item.isAggregate) {
+            if (item.resource_groups && item.resource_groups.length) {
+              item.resource_groups.forEach(groupItem => {
+                groupItem.related_resource_types && groupItem.related_resource_types.forEach(types => {
+                  if (!payload && (types.condition.length && types.condition[0] !== 'none')) {
+                    return;
+                  }
+                  types.condition = payload ? [] : ['none'];
+                  if (payload) {
+                    types.isError = false;
+                  }
+                });
+              });
+            } else {
+              item.name = item.name.split('，')[0];
+            }
+          }
+          if (item.instances && item.isAggregate) {
+            item.isNoLimited = false;
+            item.isError = !(item.instances.length || (!item.instances.length && item.isNoLimited));
+            item.isNeedNoLimited = true;
+            if (!payload || item.instances.length) {
+              item.isNoLimited = false;
+              item.isError = false;
+            }
+            if ((!item.instances.length && !payload && item.isNoLimited) || payload) {
+              item.isNoLimited = true;
+              item.isError = false;
+              item.instances = [];
+            }
+            return this.$set(
+              tableData,
+              index,
+              new AggregationPolicy(item)
+            );
+          }
+        });
+        this.tableData = _.cloneDeep(tableData);
       },
 
       handleRelatedChange (payload) {
@@ -1729,7 +1807,8 @@
               }
               if (item.tag === 'add') {
                 const conditions = existTableData.map(
-                  subItem => subItem.resource_groups[0].related_resource_types[0].condition
+                  subItem => subItem.resource_groups && subItem.resource_groups.length
+                    ? subItem.resource_groups[0].related_resource_types[0].condition : []
                 );
                 // 是否都选择了实例
                 const isAllHasInstance = conditions.every(subItem => subItem[0] !== 'none'); // 这里可能有bug, 都设置了属性点击批量编辑时数据变了
@@ -2078,6 +2157,7 @@
           if (!item.actions) {
             this.$set(item, 'actions', []);
           }
+          item.actions = item.actions.filter(v => !v.hidden);
           item.actions.forEach(act => {
             this.$set(act, 'checked', ['checked', 'readonly'].includes(act.tag) || hasCheckedList.includes(act.id));
             this.$set(act, 'disabled', act.tag === 'readonly');
@@ -2086,13 +2166,14 @@
               ++count;
             }
           });
-          allCount = allCount + item.actions.length
-          ;(item.sub_groups || []).forEach(sub => {
+          allCount = allCount + item.actions.length;
+          (item.sub_groups || []).forEach(sub => {
             this.$set(sub, 'expanded', false);
             this.$set(sub, 'actionsAllChecked', false);
             if (!sub.actions) {
               this.$set(sub, 'actions', []);
             }
+            sub.actions = sub.actions.filter(v => !v.hidden);
             sub.actions.forEach(act => {
               this.$set(act, 'checked', ['checked', 'readonly'].includes(act.tag) || hasCheckedList.includes(act.id));
               this.$set(act, 'disabled', act.tag === 'readonly');
@@ -2561,18 +2642,32 @@
        * 点击tab
        */
       clickTab (i, key) {
+        this.handleTabChange(key);
         this.tabIndex = i;
-        if (key === 'userGroup') {
-          this.isShowUserGroup = true;
-          this.isShowIndependent = false;
-        } else {
-          this.isShowIndependent = true;
-          this.isShowUserGroup = false;
+      },
+
+      handleTabChange (key) {
+        this.tabIndex = this.tabData.findIndex(item => item.key === key);
+        if (this.tabIndex === -1) {
+          this.tabIndex = 0;
+          key = 'userGroup';
         }
+        const tabMap = {
+          userGroup: () => {
+            this.isShowUserGroup = true;
+            this.isShowIndependent = false;
+          },
+          independent: () => {
+            this.isShowIndependent = true;
+            this.isShowUserGroup = false;
+          }
+        };
+        return tabMap[key]();
       },
 
       fetchResetData () {
         this.isAllExpanded = false;
+        this.isAllUnlimited = false;
         this.sysAndtid = false;
         this.aggregationMap = [];
         this.aggregations = [];
@@ -2584,10 +2679,9 @@
     }
   };
 </script>
-<style>
-    @import './index.css';
-</style>
 <style lang="postcss" scoped>
+@import './index.css';
+@import '@/css/mixins/manage-members-detail-slidesider.css';
 .action-hover {
     color: #3a84ff;
 }
@@ -2615,6 +2709,16 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.apply-custom-switch {
+  display: flex;
+  align-items: center;
+  &-item {
+    &:not(&:last-of-type) {
+      margin-right: 20px;
+    }
+  }
 }
 
 /deep/ .bk-table-header-wrapper {

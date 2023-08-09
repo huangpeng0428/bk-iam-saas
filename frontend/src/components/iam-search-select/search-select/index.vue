@@ -72,6 +72,7 @@
 <script>
   import Vue from 'vue';
   import _ from 'lodash';
+  import il8n from '@/language';
   import Tippy from 'bk-magic-vue/lib/utils/tippy';
   import {
     popperConfig,
@@ -112,7 +113,7 @@
       },
       explainCode: {
         type: String,
-        default: '：'
+        default: il8n('common', '：')
       },
       placeholder: {
         type: String,
@@ -367,6 +368,7 @@
           instance.generatorList();
           this.panelInstance = instance;
         }
+        this.$emit('on-click-menu', { menu: this.menu });
       },
       // 显示 suggest 面板
       _showSuggestMenu (lastPanelInstance) {
@@ -572,7 +574,7 @@
         this.localValue = text;
         this.calcTextareaWidth();
         this.showPopper();
-        this.$emit('input', event);
+        this.$emit('input', { event, text });
       },
 
       keyDelete (event) {

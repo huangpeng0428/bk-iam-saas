@@ -17,14 +17,17 @@
             :title="nameType(item)">
             {{ item.name }}
           </span>
-          <span class="user-count" v-if="item.showCount">
+          <span
+            v-if="item.showCount && !externalSystemsLayout.addMemberBoundary.hideInfiniteTreeCount && enableOrganizationCount"
+            class="user-count"
+          >
             {{ '(' + item.count + ')' }}
           </span>
           <div class="organization-checkbox" v-if="item.showRadio">
             <span class="node-checkbox"
               :class="{
                 'is-disabled': disabledNode(item),
-                'is-checked': item.is_selected,
+                'is-checked': selectedNode(item),
                 'is-indeterminate': item.indeterminate
               }"
               @click.stop="handleNodeClick(item)">
@@ -53,7 +56,7 @@
             <span class="node-checkbox"
               :class="{
                 'is-disabled': disabledNode(item),
-                'is-checked': item.is_selected,
+                'is-checked': selectedNode(item),
                 'is-indeterminate': item.indeterminate
               }"
               @click.stop="handleNodeClick(item)">
@@ -92,22 +95,28 @@
       isDisabled: {
         type: Boolean,
         default: false
+      },
+      hasSelectedDepartments: {
+        type: Array,
+        default: () => []
+      },
+      hasSelectedUsers: {
+        type: Array,
+        default: () => []
       }
     },
     data () {
       return {
         startIndex: 0,
         endIndex: 0,
-
         currentFocusIndex: this.focusIndex,
-
         organizationIndex: -1,
-
-        userIndex: -1
+        userIndex: -1,
+        enableOrganizationCount: window.ENABLE_ORGANIZATION_COUNT.toLowerCase() === 'true'
       };
     },
     computed: {
-            ...mapGetters(['user']),
+            ...mapGetters(['user', 'externalSystemsLayout']),
             ghostStyle () {
                 return {
                     height: this.allData.length * this.itemHeight + 'px'
@@ -149,6 +158,19 @@
                         }
                     };
                     return typeMap[type] ? typeMap[type]() : typeMap['user']();
+                };
+            },
+            selectedNode () {
+                return (payload) => {
+                    if (this.hasSelectedDepartments.length) {
+                      payload.is_selected = this.hasSelectedDepartments.map(
+                        item => item.id.toString()).includes(payload.id.toString());
+                    }
+                    if (this.hasSelectedUsers.length) {
+                      payload.is_selected = this.hasSelectedUsers.map(
+                        item => item.username).includes(payload.username);
+                    }
+                    return payload.is_selected;
                 };
             }
     },

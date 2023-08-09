@@ -332,6 +332,7 @@ const store = new Vuex.Store({
     isSync: false,
     routerDiff: [],
     currentNav: currentNav,
+    roleCount: 0,
     roleList: [],
     noviceGuide: {
       rating_manager_authorization_scope: true,
@@ -429,6 +430,7 @@ const store = new Vuex.Store({
     group: state => state.group,
     isSync: state => state.isSync,
     roleList: state => state.roleList,
+    roleCount: state => state.roleCount,
     routerDiff: state => state.routerDiff,
     noviceGuide: state => state.noviceGuide,
     loadingConf: state => state.loadingConf,
@@ -595,6 +597,10 @@ const store = new Vuex.Store({
       // bus.$emit('roleList-update', payload.length);
     },
 
+    updateRoleListTotal (state, payload) {
+      state.roleCount = payload;
+    },
+
     updateNavData (state, payload) {
       state.navData.splice(0, state.navData.length, ...payload);
     },
@@ -654,7 +660,8 @@ const store = new Vuex.Store({
       return http.get(`${AJAX_URL_PREFIX}/accounts/user/`, config).then((response) => {
         const data = response ? response.data : {};
         if (data.role.type === 'system_manager') {
-          data.role.name = `${data.role.name}${il8n('nav', '系统管理员')}`;
+          const langManager = ['zh-cn'].includes(window.CUR_LANGUAGE) ? '系统管理员' : ' system administrator';
+          data.role.name = `${data.role.name}${langManager}`;
         }
         commit('updateUser', data);
 
@@ -684,17 +691,28 @@ const store = new Vuex.Store({
          *
          * @return {Promise} promise 对象
          */
-    roleList ({ commit, state, dispatch }, config) {
+    async roleList ({ commit, state, dispatch }, params, config) {
       const AJAX_URL_PREFIX = window.AJAX_URL_PREFIX;
-      return http.get(`${AJAX_URL_PREFIX}/accounts/user/roles/`, config).then((response) => {
-        const data = response ? response.data : [];
-        data.forEach((item) => {
+      // return http.get(`${AJAX_URL_PREFIX}/accounts/user/roles/`, config).then((response) => {
+      const queryParams = {
+        ...{
+          with_super: true,
+          offset: 0,
+          limit: 20
+        },
+        ...params
+      };
+      return http.get(`${AJAX_URL_PREFIX}/roles/grade_managers/?${json2Query(queryParams)}`).then(({ data }) => {
+        const results = data.results || [];
+        results.forEach((item) => {
           if (item.type === 'system_manager') {
-            item.name = `${item.name}${il8n('nav', '系统管理员')}`;
+            const langManager = ['zh-cn'].includes(window.CUR_LANGUAGE) ? '系统管理员' : ' system administrator';
+            item.name = `${item.name}${langManager}`;
           }
         });
-        commit('updateRoleList', data);
-        return data;
+        commit('updateRoleListTotal', data.count || 0);
+        commit('updateRoleList', results);
+        return results;
       });
     },
 
