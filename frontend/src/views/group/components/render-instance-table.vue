@@ -72,13 +72,13 @@
                 <bk-button v-for="(item, index) in row.aggregateResourceType"
                   :key="item.id" @click="selectResourceType(row, index)"
                   :class="row.selectedIndex === index ? 'is-selected' : ''" size="small">{{item.name}}
-                  <span v-if="row.instancesDisplayData[item.id] && row.instancesDisplayData[item.id].length">({{row.instancesDisplayData[item.id].length}})</span>
+                  <span v-if="!row.isNoLimited && row.instancesDisplayData[item.id] && row.instancesDisplayData[item.id].length">({{row.instancesDisplayData[item.id].length}})</span>
                 </bk-button>
               </div>
               <div class="content">
                 <render-condition
                   :ref="`condition_${$index}_aggregateRef`"
-                  :value="row.value"
+                  :value="formatDisplayValue(row)"
                   :is-empty="row.empty"
                   :can-view="false"
                   :can-paste="row.canPaste"
@@ -282,6 +282,7 @@
   import { mapGetters } from 'vuex';
   import Condition from '@/model/condition';
   import GroupPolicy from '@/model/group-policy';
+  import GroupAggregationPolicy from '@/model/group-aggregation-policy';
   import RenderAggregateSideslider from '@/components/choose-ip/sideslider';
   import { leaveConfirm } from '@/common/leave-confirm';
   import { CUSTOM_PERM_TEMPLATE_ID, PERMANENT_TIMESTAMP } from '@/common/constants';
@@ -291,7 +292,6 @@
   import RenderResourcePopover from '@/components/iam-view-resource-popover';
   import RenderDetail from '../common/render-detail';
   import DeleteActionDialog from '@/views/group/components/delete-related-action-dialog.vue';
-  import GroupAggregationPolicy from '../../../model/group-aggregation-policy';
 
   // import store from '@/store'
   export default {
@@ -345,7 +345,7 @@
         default: 'action'
       },
       groupId: {
-        type: String,
+        type: [String, Number],
         default: ''
       },
       authorization: {
@@ -529,6 +529,20 @@
       },
       isShowDeleteAction () {
         return ['detail'].includes(this.mode) && this.isCustom && this.type !== 'view' && !this.externalDelete;
+      },
+      // 处理无限制和聚合后多个tab数据结构不兼容情况
+      formatDisplayValue () {
+        return (payload) => {
+          const { isNoLimited, empty, value, aggregateResourceType, selectedIndex } = payload;
+          if (value && aggregateResourceType[selectedIndex]) {
+            let displayValue = aggregateResourceType[selectedIndex].displayValue;
+            if (isNoLimited || empty) {
+              console.log(isNoLimited, empty);
+              displayValue = value;
+            }
+            return displayValue;
+          }
+        };
       }
     },
     watch: {
@@ -1048,9 +1062,21 @@
               if (`${systemId}${aggregateResourceItem.id}` === this.curCopyKey && this.curCopyDataId !== item.aggregationId) {
                 if (Object.keys(item.instancesDisplayData).length) {
                   item.instancesDisplayData[this.instanceKey] = _.cloneDeep(tempArrgegateData);
-                  item.instances = this.setInstanceData(item.instancesDisplayData);
+                  if (this.curCopyNoLimited) {
+                    item.instances = [];
+                    item.isNoLimited = true;
+                  } else {
+                    item.isNoLimited = false;
+                    item.instances = this.setInstanceData(item.instancesDisplayData);
+                  }
                 } else {
-                  item.instances = _.cloneDeep(tempArrgegateData);
+                  if (this.curCopyNoLimited) {
+                    item.instances = [];
+                    item.isNoLimited = true;
+                  } else {
+                    item.isNoLimited = false;
+                    item.instances = _.cloneDeep(tempArrgegateData);
+                  }
                   this.setInstancesDisplayData(item);
                 }
               }
@@ -1208,13 +1234,7 @@
           this.handleRelatedAction(res.data);
         } catch (e) {
           console.error(e);
-          this.bkMessageInstance = this.$bkMessage({
-            limit: 1,
-            theme: 'error',
-            message: e.message || e.data.msg || e.statusText,
-            ellipsisLine: 2,
-            ellipsisCopy: true
-          });
+          this.messageAdvancedError(e);
         } finally {
           this.sliderLoading = false;
         }
@@ -1278,7 +1298,7 @@
                 && (item.attribute && !item.attribute.length))
               || (!item.instance && !item.attribute.length));
             if (emptyIndex > -1) {
-              this.messageError(this.$t(`m.info['第几项实例和属性不能都为空']`, { value: emptyIndex + 1 }), 2000);
+              this.messageWarn(this.$t(`m.info['第几项实例和属性不能都为空']`, { value: emptyIndex + 1 }), 3000);
               return;
             }
             await this.handleMainActionSubmit(data, related_actions);

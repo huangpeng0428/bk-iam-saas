@@ -71,7 +71,9 @@
 
   export default {
     name: 'infinite-tree',
-    inject: ['getGroupAttributes'],
+    inject: {
+      getGroupAttributes: { value: 'getGroupAttributes', default: null }
+    },
     props: {
       // 所有数据
       allData: {
@@ -113,6 +115,10 @@
       isDisabled: {
         type: Boolean,
         default: false
+      },
+      isBorder: {
+        type: Boolean,
+        default: true
       },
       // 根据状态码渲染落地空内容
       emptyData: {
@@ -211,15 +217,13 @@
             },
             selectedNode () {
                 return (payload) => {
-                    if (this.hasSelectedDepartments.length) {
+                    if (this.hasSelectedDepartments.length || this.hasSelectedUsers.length) {
                       payload.is_selected = this.hasSelectedDepartments.map(
-                        item => item.id.toString()).includes(payload.id.toString());
-                    }
-                    if (this.hasSelectedUsers.length) {
-                      payload.is_selected = this.hasSelectedUsers.map(
+                        item => item.id.toString()).includes(payload.id.toString())
+                        || this.hasSelectedUsers.map(
                         item => item.username).includes(payload.username);
+                        return payload.is_selected;
                     }
-                    return payload.is_selected;
                 };
             }
     },

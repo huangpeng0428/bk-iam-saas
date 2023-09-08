@@ -1,6 +1,6 @@
 <template>
   <div class="iam-user-group-perm-wrapper" v-bkloading="{ isLoading, opacity: 1 }">
-    <template v-if="!groupAttributes.source_from_role">
+    <template v-if="!groupAttributes.source_from_role && !readonly">
       <template v-if="externalSystemsLayout.userGroup.groupDetail.hideGroupPermExpandTitle">
         <bk-button
           v-if="!isLoading && isEditMode && !groupAttributes.source_type"
@@ -128,6 +128,7 @@
       return {
         groupId: '',
         isLoading: false,
+        linearActionList: [],
         groupSystemList: [],
         authorizationData: {},
         groupSystemListLength: '',
@@ -146,7 +147,8 @@
           tip: '',
           tipType: ''
         },
-        externalHeaderWidth: 0
+        externalHeaderWidth: 0,
+        readonly: false
       };
     },
     computed: {
@@ -221,15 +223,9 @@
           this.emptyData = formatCodeData(code, this.emptyData, data.length === 0);
         } catch (e) {
           console.error(e);
-          const { code, data, message, statusText } = e;
+          const { code } = e;
           this.emptyData = formatCodeData(code, this.emptyData);
-          this.bkMessageInstance = this.$bkMessage({
-            limit: 1,
-            theme: 'error',
-            message: message || data.msg || statusText,
-            ellipsisLine: 2,
-            ellipsisCopy: true
-          });
+          this.messageAdvancedError(e);
         } finally {
           this.isLoading = false;
           this.$emit('on-init', false);
@@ -239,7 +235,8 @@
       async fetchDetail (payload) {
         if (this.$parent.fetchDetail) {
           const { data } = await this.$parent.fetchDetail(payload);
-          const { attributes } = data;
+          const { attributes, readonly } = data;
+          this.readonly = readonly;
           if (Object.keys(attributes).length) {
             this.groupAttributes = Object.assign(this.groupAttributes, attributes);
           }
@@ -316,13 +313,7 @@
           }
         } catch (e) {
           console.error(e);
-          this.bkMessageInstance = this.$bkMessage({
-            limit: 1,
-            theme: 'error',
-            message: e.message || e.data.msg || e.statusText,
-            ellipsisLine: 2,
-            ellipsisCopy: true
-          });
+          this.messageAdvancedError(e);
         } finally {
           groupSystem.loading = false;
           if (!this.externalSystemsLayout.userGroup.groupDetail.hideGroupPermExpandTitle) {
@@ -365,13 +356,7 @@
           this.authorizationData[id] = res.data.filter(item => item.id !== '*');
         } catch (e) {
           console.error(e);
-          this.bkMessageInstance = this.$bkMessage({
-            limit: 1,
-            theme: 'error',
-            message: e.message || e.data.msg || e.statusText,
-            ellipsisLine: 2,
-            ellipsisCopy: true
-          });
+          this.messageAdvancedError(e);
         }
       },
 
@@ -415,13 +400,7 @@
           this.handleActionLinearData();
         } catch (e) {
           console.error(e);
-          this.bkMessageInstance = this.$bkMessage({
-            limit: 1,
-            theme: 'error',
-            message: e.message || e.data.msg || e.statusText,
-            ellipsisLine: 2,
-            ellipsisCopy: true
-          });
+          this.messageAdvancedError(e);
         }
       },
 
@@ -486,13 +465,7 @@
           this.$set(item, 'tableDataBackup', tableDataBackup);
         } catch (e) {
           console.error(e);
-          this.bkMessageInstance = this.$bkMessage({
-            limit: 1,
-            theme: 'error',
-            message: e.message || e.data.msg || e.statusText,
-            ellipsisLine: 2,
-            ellipsisCopy: true
-          });
+          this.messageAdvancedError(e);
         } finally {
           item.loading = false;
         }
@@ -523,13 +496,7 @@
           console.log('itemTableData', item);
         } catch (e) {
           console.error(e);
-          this.bkMessageInstance = this.$bkMessage({
-            limit: 1,
-            theme: 'error',
-            message: e.message || e.data.msg || e.statusText,
-            ellipsisLine: 2,
-            ellipsisCopy: true
-          });
+          this.messageAdvancedError(e);
         } finally {
           item.loading = false;
         }
@@ -559,13 +526,7 @@
           subItem.isEdit = false;
         } catch (e) {
           console.error(e);
-          this.bkMessageInstance = this.$bkMessage({
-            limit: 1,
-            theme: 'error',
-            message: e.message || e.data.msg || e.statusText,
-            ellipsisLine: 2,
-            ellipsisCopy: true
-          });
+          this.messageAdvancedError(e);
         } finally {
           subItem.editLoading = false;
         }
@@ -611,13 +572,7 @@
           }
         } catch (e) {
           console.error(e);
-          this.bkMessageInstance = this.$bkMessage({
-            limit: 1,
-            theme: 'error',
-            message: e.message || e.data.msg || e.statusText,
-            ellipsisLine: 2,
-            ellipsisCopy: true
-          });
+          this.messageAdvancedError(e);
         } finally {
           subItem.deleteLoading = false;
         }
@@ -642,13 +597,7 @@
           this.handleInit();
         } catch (e) {
           console.error(e);
-          this.bkMessageInstance = this.$bkMessage({
-            limit: 1,
-            theme: 'error',
-            message: e.message || e.data.msg || e.statusText,
-            ellipsisLine: 2,
-            ellipsisCopy: true
-          });
+          this.messageAdvancedError(e);
         } finally {
           if (flag) {
             subItem.deleteLoading = false;
@@ -665,6 +614,11 @@
             ids: data.ids ? data.ids.join(',') : data.policy_id
           }
         }, item, {}, false);
+      },
+      
+      handleEmptyRefresh () {
+        this.handleInit();
+        this.fetchDetail(this.groupId);
       }
     }
   };

@@ -1,8 +1,7 @@
 <template>
   <div class="iam-grade-split-wrapper">
     <div :class="[
-           'iam-resource-expand',
-           extCls
+           'iam-resource-expand'
          ]"
       @click.stop="handleExpanded">
       <div class="iam-resource-header flex-between">
@@ -33,8 +32,7 @@
         :header-border="false"
         :cell-class-name="getCellClass"
         :empty-text="$t(`m.verify['请选择操作']`)"
-        @row-mouse-enter="handlerRowMouseEnter"
-        @row-mouse-leave="handlerRowMouseLeave">
+        @filter-change="handleFilterChange">
         <bk-table-column :resizable="false" :label="$t(`m.common['操作']`)" width="280">
           <template slot-scope="{ row }">
             <div :class="!!row.isAggregate ? 'set-padding' : ''">
@@ -49,6 +47,7 @@
           :filter-method="systemFilterMethod"
           :filter-multiple="false"
           prop="system_id"
+          column-key="filterTag"
           width="240">
           <template slot-scope="{ row }">
             <span :title="row.system_name">{{ row.system_name }}</span>
@@ -71,7 +70,7 @@
               </div>
               <render-condition
                 :ref="`condition_${$index}_aggregateRef`"
-                :value="row.value"
+                :value="formatDisplayValue(row)"
                 :is-empty="row.empty"
                 :can-view="false"
                 :can-paste="row.canPaste"
@@ -196,6 +195,7 @@
   import RenderCondition from '../../perm-apply/components/render-condition';
   import PreviewResourceDialog from '../../perm-apply/components/preview-resource-dialog';
   import GradePolicy from '@/model/grade-policy';
+  import GradeAggregationPolicy from '@/model/grade-aggregation-policy';
   import { PERMANENT_TIMESTAMP } from '@/common/constants';
 
   export default {
@@ -268,7 +268,8 @@
         curCopyDataId: '',
         emptyResourceGroupsList: [],
         emptyResourceGroupsName: [],
-        isExpandTable: false
+        isExpandTable: false,
+        curFilterSystem: ''
       };
     },
     computed: {
@@ -327,6 +328,19 @@
               return false;
           }
           return this.tableList[this.curIndex].policy_id !== '';
+      },
+      // 处理无限制和聚合后多个tab数据结构不兼容情况
+      formatDisplayValue () {
+        return (payload) => {
+          const { isNoLimited, empty, value, aggregateResourceType, selectedIndex } = payload;
+          if (value && aggregateResourceType[selectedIndex]) {
+            let displayValue = aggregateResourceType[selectedIndex].displayValue;
+            if (isNoLimited || empty) {
+              displayValue = value;
+            }
+            return displayValue;
+          }
+        };
       }
     },
     watch: {
@@ -383,7 +397,17 @@
       // 过滤方法
       systemFilterMethod (value, row, column) {
         const property = column.property;
+        if (row.isAggregate && value === row.system_id) {
+          this.curFilterSystem = `${value}-${row.$id}`;
+        }
         return row[property] === value;
+      },
+
+      handleFilterChange (payload) {
+        const { filterTag } = payload;
+        if (!filterTag.length) {
+          this.curFilterSystem = '';
+        }
       },
 
       handleRemove (row, payload) {
@@ -444,7 +468,7 @@
           curAggregateSystemId: data.system_id
         };
         this.aggregateResourceParams = _.cloneDeep(aggregateResourceParams);
-        this.aggregateIndex = index;
+        this.aggregateIndex = !this.curFilterSystem ? index : this.tableList.findIndex(item => `${item.system_id}-${item.$id}` === this.curFilterSystem);
         const instanceKey = data.aggregateResourceType[data.selectedIndex].id;
         this.instanceKey = instanceKey;
         if (!data.instancesDisplayData[instanceKey]) data.instancesDisplayData[instanceKey] = [];
@@ -479,6 +503,11 @@
           // eslint-disable-next-line max-len
           this.tableList[this.aggregateIndex].instances.push(...this.tableList[this.aggregateIndex].instancesDisplayData[key]);
         }
+        this.$set(
+          this.tableList,
+          this.aggregateIndex,
+          new GradeAggregationPolicy(this.tableList[this.aggregateIndex])
+        );
         this.$emit('on-select', this.tableList[this.aggregateIndex]);
       },
 
@@ -547,13 +576,7 @@
           this.handleRelatedAction(res.data);
         } catch (e) {
           console.error(e);
-          this.bkMessageInstance = this.$bkMessage({
-            limit: 1,
-            theme: 'error',
-            message: e.message || e.data.msg || e.statusText,
-            ellipsisLine: 2,
-            ellipsisCopy: true
-          });
+          this.messageAdvancedError(e);
         } finally {
           this.sliderLoading = false;
         }

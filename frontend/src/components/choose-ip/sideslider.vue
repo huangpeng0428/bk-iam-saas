@@ -167,7 +167,7 @@
         searchValue: '',
         loading: false,
         isFilter: false,
-        listLoading: false,
+        listLoading: true,
         isScrollBottom: false,
         isHide: false,
         notLimitValue: false,
@@ -209,6 +209,7 @@
       show: {
         async handler (value) {
           if (value) {
+            this.listLoading = true;
             this.pageChangeAlertMemo = window.changeAlert;
             window.changeAlert = 'iamSidesider';
             // 为了减少组件之间数据传递的代码量，这里再重新调用一次接口做任意类型数据的处理
@@ -216,7 +217,7 @@
               await this.fetchAuthorizationScopeActions(this.params.curAggregateSystemId);
             }
             if ((this.isSuperManager && !this.isHasDefaultData) || this.isAny) {
-              this.fetchData(true);
+              this.fetchData(false, true);
             } else {
               this.setSelectList(this.defaultList);
             }
@@ -292,16 +293,10 @@
           this.emptyData = formatCodeData(code, this.emptyData, data.results.length === 0);
         } catch (e) {
           console.error(e);
-          const { code, data, message, statusText } = e;
+          const { code } = e;
           this.emptyData = formatCodeData(code, this.emptyData);
           this.resetData();
-          this.bkMessageInstance = this.$bkMessage({
-            limit: 1,
-            theme: 'error',
-            message: message || data.msg || statusText,
-            ellipsisLine: 2,
-            ellipsisCopy: true
-          });
+          this.messageAdvancedError(e);
         } finally {
           this.loading = false;
           this.listLoading = false;
@@ -318,13 +313,7 @@
           this.isAny = data && data.some(item => item.id === '*');
         } catch (e) {
           console.error(e);
-          this.bkMessageInstance = this.$bkMessage({
-            limit: 1,
-            theme: 'error',
-            message: e.message || e.data.msg || e.statusText,
-            ellipsisLine: 2,
-            ellipsisCopy: true
-          });
+          this.messageAdvancedError(e);
         }
       },
 
@@ -356,13 +345,7 @@
               this.selectList.push(...res.data.results || []);
             } catch (e) {
               console.error(e);
-              this.bkMessageInstance = this.$bkMessage({
-                limit: 1,
-                theme: 'error',
-                message: e.message || e.data.msg || e.statusText,
-                ellipsisLine: 2,
-                ellipsisCopy: true
-              });
+              this.messageAdvancedError(e);
             } finally {
               this.isScrollBottom = false;
               event.target.scrollTo(0, event.target.scrollTop - 1);
@@ -411,13 +394,7 @@
           });
         } catch (e) {
           console.error(e);
-          this.bkMessageInstance = this.$bkMessage({
-            limit: 1,
-            theme: 'error',
-            message: e.message || e.data.msg || e.statusText,
-            ellipsisLine: 2,
-            ellipsisCopy: true
-          });
+          this.messageAdvancedError(e);
         } finally {
           this.listLoading = false;
         }
@@ -629,13 +606,14 @@
                 line-height: 20px;
             }
             .empty-wrapper {
+                width: 300px;
                 position: absolute;
                 left: 50%;
                 top: 50%;
                 transform: translate(-50%, -50%);
-                img {
+                /* img {
                     width: 120px;
-                }
+                } */
             }
         }
     }

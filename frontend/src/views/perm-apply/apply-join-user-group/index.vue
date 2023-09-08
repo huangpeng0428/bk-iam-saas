@@ -224,7 +224,6 @@
                 :placeholder="$t(`m.verify['请输入']`)"
                 :value="row.role_members"
                 :index="$index"
-                @on-change="handleUpdateMembers"
               />
             </template>
           </bk-table-column>
@@ -334,28 +333,6 @@
       @on-sumbit="handleSubmitAdd" />
 
     <bk-sideslider
-      :is-show.sync="isShowGradeSlider"
-      :width="640"
-      :title="gradeSliderTitle"
-      :quick-close="true"
-      @animation-end="gradeSliderTitle === ''">
-      <div class="grade-members-content"
-        slot="content"
-        v-bkloading="{ isLoading: sliderLoading, opacity: 1 }">
-        <template v-if="!sliderLoading">
-          <div v-for="(item, index) in gradeMembers"
-            :key="index"
-            class="member-item">
-            <span class="member-name">
-              {{ item }}
-            </span>
-          </div>
-          <p class="info">{{ $t(`m.info['管理空间成员提示']`) }}</p>
-        </template>
-      </div>
-    </bk-sideslider>
-
-    <bk-sideslider
       :is-show="isShowResourceInstanceSideSlider"
       :title="resourceInstanceSideSliderTitle"
       :width="960"
@@ -371,7 +348,6 @@
           :original-data="originalCondition"
           :selection-mode="curSelectionMode"
           :params="params"
-          @on-limit-change="handleLimitChange"
         />
       </div>
       <div slot="footer" style="margin-left: 25px;">
@@ -444,11 +420,13 @@
         isShowGroupError: false,
         isShowMemberError: false,
         isShowMemberAdd: false,
+        isShowMemberEmptyError: false,
         tableList: [],
         currentSelectList: [],
         curUserGroup: [],
         currentSelectedGroups: [],
         defaultSelectedGroups: [],
+        defaultSelectedIds: [],
         searchParams: {},
         searchList: [],
         searchValue: [],
@@ -462,10 +440,7 @@
         isShowPermSideSlider: false,
         curGroupName: '',
         curGroupId: '',
-        isShowGradeSlider: false,
         sliderLoading: false,
-        gradeMembers: [],
-        gradeSliderTitle: '',
         curRole: '',
         users: [],
         departments: [],
@@ -473,6 +448,7 @@
         addMemberTitle: this.$t(`m.myApply['权限获得者']`),
         addMemberText: this.$t(`m.permApply['选择权限获得者']`),
         addMemberTips: this.$t(`m.permApply['可代他人申请加入用户组获取权限']`),
+        curCopyParams: {},
         queryParams: {},
         emptyData: {
           type: '',
@@ -690,6 +666,7 @@
           }
         }
       }
+      this.fetchDefaultData();
     },
     mounted () {
       window.addEventListener('resize', (this.formatFormItemWidth));
@@ -704,7 +681,7 @@
       /**
        * 获取页面数据
        */
-      async fetchPageData () {
+      async fetchDefaultData () {
         this.fetchSystemList();
         await this.fetchCurUserGroup();
         await this.fetchUserGroupList();
@@ -731,11 +708,7 @@
             this.handleFormatRecursion(data || []);
           } catch (e) {
             console.error(e);
-            this.bkMessageInstance = this.$bkMessage({
-              limit: 1,
-              theme: 'error',
-              message: e.message || e.data.msg || e.statusText
-            });
+            this.messageAdvancedError(e);
           }
         }
       },
@@ -1006,7 +979,8 @@
             ...this.searchParams,
             limit,
             offset: limit * (current - 1),
-            resource_instances: resourceInstances || []
+            resource_instances: resourceInstances || [],
+            apply_disable: false
         };
         try {
           const { code, data } = await this.$store.dispatch('permApply/getJoinGroupSearch', params);
@@ -1036,16 +1010,10 @@
           this.emptyData = formatCodeData(code, this.emptyData, this.tableList.length === 0);
         } catch (e) {
           console.error(e);
-          const { code, data, message, statusText } = e;
+          const { code } = e;
           this.tableList = [];
           this.emptyData = formatCodeData(code, this.emptyData);
-          this.bkMessageInstance = this.$bkMessage({
-            limit: 1,
-            theme: 'error',
-            message: message || data.msg || statusText,
-            ellipsisLine: 2,
-            ellipsisCopy: true
-          });
+          this.messageAdvancedError(e);
         } finally {
           this.tableLoading = false;
           this.curSelectMenu = '';
@@ -1060,10 +1028,10 @@
         // 删除接口无用字段
         delete this.searchParams.current;
         const params = {
-            // ...this.applyGroupData,
             ...this.searchParams,
             limit,
-            offset: limit * (current - 1)
+            offset: limit * (current - 1),
+            apply_disable: false
         };
         try {
           const { code, data } = await this.$store.dispatch('userGroup/getUserGroupList', params);
@@ -1094,32 +1062,9 @@
           console.error(e);
           this.emptyData = formatCodeData(e.code, this.emptyData);
           this.tableList = [];
-          this.bkMessageInstance = this.$bkMessage({
-            limit: 1,
-            theme: 'primary',
-            message: e.message || e.data.msg || e.statusText
-          });
+          this.messageAdvancedError(e);
         } finally {
           this.tableLoading = false;
-        }
-      },
-
-      async fetchRoles (id) {
-        this.sliderLoading = true;
-        try {
-          const res = await this.$store.dispatch('role/getGradeMembers', { id });
-          this.gradeMembers = [...res.data];
-        } catch (e) {
-          console.error(e);
-          this.bkMessageInstance = this.$bkMessage({
-            limit: 1,
-            theme: 'error',
-            message: e.message || e.data.msg || e.statusText,
-            ellipsisLine: 2,
-            ellipsisCopy: true
-          });
-        } finally {
-          this.sliderLoading = false;
         }
       },
 
@@ -1147,6 +1092,8 @@
         window.changeDialog = true;
         type === 'user' ? this.users.splice(payload, 1) : this.departments.splice(payload, 1);
         // this.isShowMemberAdd = this.users.length < 1 && this.departments.length < 1;
+        // 先注释掉此方法，新版交互用得到
+        // this.formatCheckedUserGroup();
       },
 
       handleSubmitAdd (payload) {
@@ -1158,6 +1105,33 @@
         // this.isShowMemberAdd = false;
         this.isShowAddMemberDialog = false;
         this.isShowMemberEmptyError = false;
+        // this.formatCheckedUserGroup();
+      },
+
+      // 处理权限获得者是非空并且不包含自己，不勾选个人已申请的用户组
+      formatCheckedUserGroup () {
+        const allList = [...this.users, ...this.departments];
+        const isMine = allList.find(item => item.username === this.user.username);
+        const currentSelectedGroups = this.currentSelectedGroups.map(item => item.id.toString());
+        this.curUserGroup = _.cloneDeep(this.defaultSelectedIds);
+        this.tableList.forEach(item => {
+          if (isMine || !allList.length) {
+            this.currentSelectedGroups = this.currentSelectedGroups.filter(
+              v => !this.curUserGroup.includes(v.id.toString()));
+            if (currentSelectedGroups.includes(item.id.toString())
+              || this.curUserGroup.includes(item.id.toString())) {
+              this.$refs.groupTableRef && this.$refs.groupTableRef.toggleRowSelection(item, true);
+            }
+          } else {
+            if (this.curUserGroup.includes(item.id.toString())) {
+              this.$refs.groupTableRef && this.$refs.groupTableRef.toggleRowSelection(item, false);
+            }
+          }
+        });
+        // 处理有选择权限获得者并不包含自己的情况
+        if (!isMine && allList.length) {
+          this.curUserGroup = [];
+        }
       },
 
       setDefaultSelect (payload) {
@@ -1226,13 +1200,7 @@
           this.systemList = data || [];
         } catch (e) {
           console.error(e);
-          this.bkMessageInstance = this.$bkMessage({
-            limit: 1,
-            theme: 'error',
-            message: e.message || e.data.msg || e.statusText,
-            ellipsisLine: 2,
-            ellipsisCopy: true
-          });
+          this.messageAdvancedError(e);
         } finally {
           // this.requestQueue.shift()
         }
@@ -1289,15 +1257,7 @@
         this.curGroupId = payload.id;
         this.isShowPermSideSlider = true;
       },
-
-      handleViewDetail (payload) {
-        if (payload.role && payload.role.name) {
-          this.isShowGradeSlider = true;
-          this.gradeSliderTitle = this.$t(`m.info['管理空间成员侧边栏标题信息']`, { value: `${this.$t(`m.common['【']`)}${payload.role.name}${this.$t(`m.common['】']`)}` });
-          this.fetchRoles(payload.role.id);
-        }
-      },
-
+      
       handleAnimationEnd () {
         this.curGroupName = '';
         this.curGroupId = '';
@@ -1376,6 +1336,7 @@
               }
             });
             this.curUserGroup = _.cloneDeep(groupIdList);
+            this.defaultSelectedIds = _.cloneDeep(groupIdList);
             this.defaultSelectedGroups = _.cloneDeep(tableData || []);
           }
           this.emptyData = formatCodeData(code, this.emptyData, this.curUserGroup.length === 0);
@@ -1386,13 +1347,7 @@
           this.curUserGroup = [];
           this.currentSelectedGroups = [];
           this.defaultSelectedGroups = [];
-          this.bkMessageInstance = this.$bkMessage({
-            limit: 1,
-            theme: 'error',
-            message: e.message || e.data.msg || e.statusText,
-            ellipsisLine: 2,
-            ellipsisCopy: true
-          });
+          this.messageAdvancedError(e);
         }
       },
 
@@ -1466,7 +1421,37 @@
       },
 
       async handleSubmit () {
-        const groupsList = [...this.defaultSelectedGroups, ...this.currentSelectedGroups];
+        const subjects = [];
+        const groupsList = [...this.currentSelectedGroups];
+        this.users.forEach(item => {
+          subjects.push({
+            type: 'user',
+            id: item.username
+          });
+        });
+        this.departments.forEach(item => {
+          subjects.push({
+            type: 'department',
+            id: item.id
+          });
+        });
+        // 新版交互前，先采取只提交手动勾选的数据的临时方案
+        // if (subjects.length) {
+        //   const isOther = subjects.filter(item => item.id !== this.user.username);
+        //   if (isOther.length) {
+        //     // 如果权限获得者既包含了自己也包含了他人，就提交已申请过的加上勾选的
+        //     const isMine = subjects.find(item => item.id === this.user.username);
+        //     if (isMine) {
+        //       // 这里需要产品优化既包含了自己也包含了他人，单独提交已申请过了的用户组会报错，所以这里还需要判断下有没有勾选
+        //       if (!this.currentSelectedGroups.length) {
+        //         this.isShowGroupError = true;
+        //         this.scrollToLocation(this.$refs.selectTableRef);
+        //         return;
+        //       }
+        //       groupsList = [...this.defaultSelectedGroups, ...this.currentSelectedGroups];
+        //     }
+        //   }
+        // }
         if (!groupsList.length) {
           this.isShowGroupError = true;
           this.scrollToLocation(this.$refs.selectTableRef);
@@ -1486,26 +1471,6 @@
         if (this.expiredAtUse === 15552000) {
           this.expiredAtUse = this.handleExpiredAt();
         }
-        const subjects = [];
-        // if (this.isAll) {
-        //     subjects.push({
-        //         id: '*',
-        //         type: '*'
-        //     });
-        // } else {
-        this.users.forEach(item => {
-          subjects.push({
-            type: 'user',
-            id: item.username
-          });
-        });
-        this.departments.forEach(item => {
-          subjects.push({
-            type: 'department',
-            id: item.id
-          });
-        });
-        // }
         const params = {
           expired_at: this.expiredAtUse,
           reason: this.reason,
@@ -1515,7 +1480,7 @@
         };
         try {
           await this.$store.dispatch('permApply/applyJoinGroup', params);
-          this.messageSuccess(this.$t(`m.info['申请已提交']`), 1000);
+          this.messageSuccess(this.$t(`m.info['申请已提交']`), 3000);
           this.$router.push({
             name: 'apply'
           });
@@ -1524,13 +1489,7 @@
           if (['admin'].includes(this.user.username)) {
             this.isShowConfirmDialog = true;
           } else {
-            this.bkMessageInstance = this.$bkMessage({
-              limit: 1,
-              theme: 'error',
-              message: e.message || e.data.msg || e.statusText,
-              ellipsisLine: 2,
-              ellipsisCopy: true
-            });
+            this.messageAdvancedError(e);
           }
         } finally {
           this.submitLoading = false;
@@ -1546,6 +1505,13 @@
           this.isShowResourceInstanceSideSlider = false;
           this.resetDataAfterClose();
         }, _ => _);
+      },
+
+      resetDataAfterClose () {
+        this.curResIndex = -1;
+        this.groupIndex = -1;
+        this.params = {};
+        this.resourceInstanceSideSliderTitle = '';
       },
             
       refreshCurrentQuery () {
@@ -1689,4 +1655,12 @@
         }
     }
   }
+</style>
+
+<style lang="postcss" scoped>
+/deep/ .bk-page.bk-page-align-right {
+  .bk-page-selection-count-left {
+    display: none;
+  }
+}
 </style>

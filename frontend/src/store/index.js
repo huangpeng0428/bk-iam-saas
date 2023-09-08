@@ -82,6 +82,9 @@ import applyProvisionPerm from './modules/apply-provision-perm';
 // 管理空间模块
 import spaceManage from './modules/space-manage';
 
+// 用户组设置模块
+import userGroupSetting from './modules/user-group-setting';
+
 Vue.use(Vuex);
 
 const SITE_URL = window.SITE_URL;
@@ -253,6 +256,14 @@ const currentNav = [
         rkey: 'audit',
         path: `${SITE_URL}audit`,
         disabled: false
+      },
+      {
+        icon: 'setting-fill',
+        name: il8n('nav', '用户组设置'),
+        id: 'userGroupSettingNav',
+        rkey: 'userGroupSetting',
+        path: `${SITE_URL}user-group-setting`,
+        disabled: false
       }
     ]
   }
@@ -305,7 +316,8 @@ const store = new Vuex.Store({
     access,
     resourcePermiss,
     applyProvisionPerm,
-    spaceManage
+    spaceManage,
+    userGroupSetting
   },
   state: {
     mainContentLoading: false,
@@ -623,6 +635,10 @@ const store = new Vuex.Store({
 
     updateSystemId (state, payload) {
       state.externalSystemId = payload;
+    },
+
+    setGuideShowByField (state, payload) {
+
     }
   },
   actions: {
@@ -659,10 +675,11 @@ const store = new Vuex.Store({
       const AJAX_URL_PREFIX = window.AJAX_URL_PREFIX;
       return http.get(`${AJAX_URL_PREFIX}/accounts/user/`, config).then((response) => {
         const data = response ? response.data : {};
-        if (data.role.type === 'system_manager') {
-          const langManager = ['zh-cn'].includes(window.CUR_LANGUAGE) ? '系统管理员' : ' system administrator';
-          data.role.name = `${data.role.name}${langManager}`;
-        }
+        // 由于现有搜索改成后端接口搜索，去掉之前前端自定义的内容
+        // if (data.role.type === 'system_manager') {
+        //   const langManager = ['zh-cn'].includes(window.CUR_LANGUAGE) ? '系统管理员' : ' system administrator';
+        //   data.role.name = `${data.role.name}${langManager}`;
+        // }
         commit('updateUser', data);
 
         if (Object.keys(data).length > 0) {
@@ -704,12 +721,12 @@ const store = new Vuex.Store({
       };
       return http.get(`${AJAX_URL_PREFIX}/roles/grade_managers/?${json2Query(queryParams)}`).then(({ data }) => {
         const results = data.results || [];
-        results.forEach((item) => {
-          if (item.type === 'system_manager') {
-            const langManager = ['zh-cn'].includes(window.CUR_LANGUAGE) ? '系统管理员' : ' system administrator';
-            item.name = `${item.name}${langManager}`;
-          }
-        });
+        // results.forEach((item) => {
+        //   if (item.type === 'system_manager') {
+        //     const langManager = ['zh-cn'].includes(window.CUR_LANGUAGE) ? '系统管理员' : ' system administrator';
+        //     item.name = `${item.name}${langManager}`;
+        //   }
+        // });
         commit('updateRoleListTotal', data.count || 0);
         commit('updateRoleList', results);
         return results;

@@ -2,7 +2,8 @@
   <!-- eslint-disable max-len -->
   <div class="iam-system-access-wrapper">
     <render-search>
-      <div>
+      <!-- 注释掉查询类型，保留默认查询为实例权限 -->
+      <!-- <div>
         <bk-form form-type="inline" class="pb10">
           <iam-form-item :label="$t(`m.common['查询类型']`)" class="pb20 form-item-resource">
             <bk-select
@@ -20,7 +21,7 @@
             <p class="error-tips" v-if="searchTypeError">{{$t(`m.resourcePermiss['请选择查询类型']`)}}</p>
           </iam-form-item>
         </bk-form>
-      </div>
+      </div> -->
       <div>
         <bk-form form-type="inline" class="pb10">
           <iam-form-item :label="$t(`m.permApply['选择系统']`)" class="pb20 pr20 form-item-resource">
@@ -83,7 +84,7 @@
                 _.related_resource_types" :key="contentIndex">
                 <div class="content">
                   <render-condition
-                    :ref="`condition_${$index}_${contentIndex}_ref`"
+                    :ref="`condition_${_index}_${contentIndex}_ref`"
                     :value="content.value"
                     :is-empty="content.empty"
                     :params="curCopyParams"
@@ -184,15 +185,13 @@
           ref="renderResourceRef"
           :data="condition"
           :original-data="originalCondition"
-          :flag="curFlag"
           :selection-mode="curSelectionMode"
           :params="params"
-          @on-limit-change="handleLimitChange"
         />
       </div>
       <div slot="footer" style="margin-left: 25px;">
-        <bk-button theme="primary" :loading="sliderLoading" :disabled="disabled" @click="handleResourceSumit">{{ $t(`m.common['保存']`) }}</bk-button>
-        <bk-button style="margin-left: 10px;" :disabled="disabled" @click="handleResourceCancel">{{ $t(`m.common['取消']`) }}</bk-button>
+        <bk-button theme="primary" :loading="sliderLoading" @click="handleResourceSumit">{{ $t(`m.common['保存']`) }}</bk-button>
+        <bk-button style="margin-left: 10px;" @click="handleResourceCancel">{{ $t(`m.common['取消']`) }}</bk-button>
       </div>
     </bk-sideslider>
   </div>
@@ -225,6 +224,7 @@
         tableListClone: [],
         tableLoading: false,
         instanceLoading: false,
+        sliderLoading: false,
         systemList: [],
         resourceList: [],
         systemId: '',
@@ -242,15 +242,17 @@
         hasMore: false,
         resourceType: '',
         parentId: '',
+        resourceInstanceSidesliderTitle: '',
         resourceListChilder: [],
         resourceTypeData: { isEmpty: true },
         isShowResourceInstanceSideslider: false,
         curResIndex: -1,
         groupIndex: -1,
         params: {},
+        curCopyParams: {},
         resourceInstances: [],
         searchTypeList: [{ name: this.$t(`m.resourcePermiss['实例权限']`), value: 'resource_instance' }, { name: this.$t(`m.resourcePermiss['操作权限']`), value: 'operate' }],
-        searchType: '',
+        searchType: 'resource_instance',
         searchValue: '',
         systemIdError: false,
         actionIdError: false,
@@ -332,13 +334,7 @@
           this.systemList = res.data;
         } catch (e) {
           console.error(e);
-          this.bkMessageInstance = this.$bkMessage({
-            limit: 1,
-            theme: 'error',
-            message: e.message || e.data.msg || e.statusText,
-            ellipsisLine: 2,
-            ellipsisCopy: true
-          });
+          this.messageAdvancedError(e);
         } finally {
           // this.requestQueue.shift()
         }
@@ -357,11 +353,7 @@
           this.recursionFunc(res.data);
         } catch (e) {
           console.error(e);
-          this.bkMessageInstance = this.$bkMessage({
-            limit: 1,
-            theme: 'error',
-            message: e.message || e.data.msg || e.statusText
-          });
+          this.messageAdvancedError(e);
         }
       },
 
@@ -455,16 +447,10 @@
           }
         } catch (e) {
           console.error(e);
-          const { code, data, message, statusText } = e;
+          const { code } = e;
           this.tableList = [];
           this.emptyData = formatCodeData(code, this.emptyData);
-          this.bkMessageInstance = this.$bkMessage({
-            limit: 1,
-            theme: 'error',
-            message: message || data.msg || statusText,
-            ellipsisLine: 2,
-            ellipsisCopy: true
-          });
+          this.messageAdvancedError(e);
         } finally {
           this.tableLoading = false;
         }
@@ -619,8 +605,11 @@
       },
 
       handleEmptyClear () {
+        if (!this.searchValue) {
+          this.handleReset();
+          this.resourceTypeData = Object.assign({}, { isEmpty: true });
+        }
         this.searchValue = '';
-        this.handleReset();
         this.emptyData = formatCodeData(0, Object.assign(this.emptyData, { type: 'empty', text: '', tipType: '' }));
       },
 

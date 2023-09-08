@@ -74,7 +74,9 @@
 
   export default {
     name: 'dialog-infinite-list',
-    inject: ['getGroupAttributes'],
+    inject: {
+      getGroupAttributes: { value: 'getGroupAttributes', default: null }
+    },
     props: {
       // 所有数据
       allData: {
@@ -162,15 +164,13 @@
             },
             selectedNode () {
                 return (payload) => {
-                    if (this.hasSelectedDepartments.length) {
+                    if (this.hasSelectedDepartments.length || this.hasSelectedUsers.length) {
                       payload.is_selected = this.hasSelectedDepartments.map(
-                        item => item.id.toString()).includes(payload.id.toString());
-                    }
-                    if (this.hasSelectedUsers.length) {
-                      payload.is_selected = this.hasSelectedUsers.map(
+                        item => item.id.toString()).includes(payload.id.toString())
+                        || this.hasSelectedUsers.map(
                         item => item.username).includes(payload.username);
+                        return payload.is_selected;
                     }
-                    return payload.is_selected;
                 };
             }
     },
@@ -281,7 +281,7 @@
               node.is_selected = !node.is_selected;
               this.$emit('on-checked', node.is_selected, !node.is_selected, node.is_selected, node);
             } else {
-              this.messageError(this.$t(`m.verify['当前选择项不在授权范围内']`));
+              this.messageWarn(this.$t(`m.verify['当前选择项不在授权范围内']`), 3000);
             }
           }
         }
@@ -299,7 +299,7 @@
               node.is_selected = !node.is_selected;
               this.$emit('on-checked', node.is_selected, !node.is_selected, true, node);
             } else {
-              this.messageError(this.$t(`m.verify['当前选择项不在授权范围内']`));
+              this.messageWarn(this.$t(`m.verify['当前选择项不在授权范围内']`), 3000);
             }
           }
         }
